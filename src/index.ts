@@ -490,12 +490,25 @@ async function handleExecuteCommand(args: any) {
   // Handle save command
   if (command.toLowerCase().includes('save')) {
     try {
-      await palworldApi.post('/api/rest-api/save');
+      const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+      const config = {
+        method: 'post',
+        maxBodyLength: Infinity,
+        url: `${PALWORLD_BASE_URL}/v1/api/save`,
+        headers: {
+          'Authorization': `Basic ${authString}`
+        }
+      };
+
+      const response = await axios(config);
+      logger.info('World saved successfully');
       return {
         success: true,
         rawResult: 'World saved'
       };
     } catch (error: any) {
+      logger.error(`Failed to save world: ${error.message}`);
       return {
         success: false,
         rawResult: `Error: ${error.message}`
