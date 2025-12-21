@@ -242,6 +242,18 @@ async function handleTakaroRequest(message: any) {
         responsePayload = await handleGetPlayers();
         break;
 
+      case 'getServerInfo':
+        responsePayload = await handleGetServerInfo();
+        break;
+
+      case 'getServerSettings':
+        responsePayload = await handleGetServerSettings();
+        break;
+
+      case 'getServerMetrics':
+        responsePayload = await handleGetServerMetrics();
+        break;
+
       case 'sendMessage':
       case 'executeCommand':
       case 'executeConsoleCommand':
@@ -290,7 +302,8 @@ async function checkServerStatus() {
   try {
     const { stdout } = await execPromise('tasklist /FI "IMAGENAME eq PalServer-Win64-Shipping-Cmd.exe" /NH');
     const wasRunning = isServerRunning;
-    isServerRunning = stdout.includes('PalServer-Win64-Shipping-Cmd.exe');
+    // tasklist truncates long names, so check for the truncated version
+    isServerRunning = stdout.includes('PalServer-Win64-Shipping');
 
     if (isServerRunning !== wasRunning) {
       logger.info(`Palworld server status changed: ${isServerRunning ? 'ONLINE' : 'OFFLINE'}`);
@@ -320,32 +333,113 @@ function startServerMonitoring() {
  * Get current players from Palworld server
  */
 async function handleGetPlayers() {
-  // Try multiple endpoint variations
-  const endpoints = ['/v1/api/players', '/api/players', '/players', '/api/rest-api/players'];
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
 
-  for (const endpoint of endpoints) {
-    try {
-      const response = await palworldApi.get(endpoint);
-      const players = response.data.players || [];
-
-      logger.info(`Successfully got players from ${endpoint}`);
-      return players.map((player: any) => ({
-        gameId: String(player.userId),
-        name: String(player.name),
-        platformId: `palworld:${player.userId}`,
-        steamId: String(player.userId),
-        ip: player.ip || undefined,
-        ping: player.ping !== undefined ? player.ping : undefined
-      }));
-    } catch (error: any) {
-      if (error.response?.status === 404 && endpoint !== endpoints[endpoints.length - 1]) {
-        continue; // Try next endpoint
+    const config = {
+      method: 'get',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/players`,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Basic ${authString}`
       }
-      logger.error(`Failed to get players from ${endpoint}: ${error}`);
-    }
-  }
+    };
 
-  return [];
+    const response = await axios(config);
+    const players = response.data.players || [];
+
+    logger.info(`Got ${players.length} players from Palworld server`);
+    return players.map((player: any) => ({
+      gameId: String(player.userId),
+      name: String(player.name),
+      platformId: `palworld:${player.userId}`,
+      steamId: String(player.userId),
+      ip: player.ip || undefined,
+      ping: player.ping !== undefined ? player.ping : undefined
+    }));
+  } catch (error: any) {
+    logger.error(`Failed to get players: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Get server info from Palworld server
+ */
+async function handleGetServerInfo() {
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+    const config = {
+      method: 'get',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/info`,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Basic ${authString}`
+      }
+    };
+
+    const response = await axios(config);
+    logger.info(`Got server info: ${response.data.servername}`);
+    return response.data;
+  } catch (error: any) {
+    logger.error(`Failed to get server info: ${error.message}`);
+    return {};
+  }
+}
+
+/**
+ * Get server settings from Palworld server
+ */
+async function handleGetServerSettings() {
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+    const config = {
+      method: 'get',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/settings`,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Basic ${authString}`
+      }
+    };
+
+    const response = await axios(config);
+    logger.info('Got server settings');
+    return response.data;
+  } catch (error: any) {
+    logger.error(`Failed to get server settings: ${error.message}`);
+    return {};
+  }
+}
+
+/**
+ * Get server metrics from Palworld server
+ */
+async function handleGetServerMetrics() {
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+    const config = {
+      method: 'get',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/metrics`,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Basic ${authString}`
+      }
+    };
+
+    const response = await axios(config);
+    logger.info('Got server metrics');
+    return response.data;
+  } catch (error: any) {
+    logger.error(`Failed to get server metrics: ${error.message}`);
+    return {};
+  }
 }
 
 /**
