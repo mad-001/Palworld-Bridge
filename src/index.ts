@@ -447,7 +447,7 @@ async function handleGetServerMetrics() {
 }
 
 /**
- * Execute command on Palworld server
+ * Execute command on Palworld server or console command
  */
 async function handleExecuteCommand(args: any) {
   const cmdArgs = typeof args === 'string' ? JSON.parse(args) : args;
@@ -455,111 +455,218 @@ async function handleExecuteCommand(args: any) {
 
   logger.info(`Executing command: ${command}`);
 
-  // Handle announce/message commands
-  if (command.toLowerCase().includes('announce') || cmdArgs.message) {
-    const message = cmdArgs.message || command;
-    try {
-      const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+  // Parse command and arguments
+  const parts = command.trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase();
+  const cmdArguments = parts.slice(1);
 
-      const data = JSON.stringify({
-        message: message
-      });
-
-      const config = {
-        method: 'post',
-        maxBodyLength: Infinity,
-        url: `${PALWORLD_BASE_URL}/v1/api/announce`,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${authString}`
-        },
-        data: data
-      };
-
-      const response = await axios(config);
-      logger.info('Message announced successfully');
+  // Handle console commands
+  switch (cmd) {
+    case 'help':
       return {
         success: true,
-        rawResult: 'Message announced'
+        rawResult: `Available Commands:
+  help - Show this help message
+  players - List all online players
+  serverinfo - Get server information
+  metrics - Get server metrics
+  settings - Get server settings
+  announce <message> - Send announcement to server
+  save - Save the world
+  shutdown [seconds] [message] - Shutdown server (default: 10s)
+  stop - Stop server immediately
+  ban <player> - Ban a player by name
+  kick <player> - Kick a player by name
+  unban <steamid> - Unban a player by Steam ID`
       };
-    } catch (error: any) {
-      logger.error(`Failed to announce message: ${error.message}`);
-      return {
-        success: false,
-        rawResult: `Error: ${error.message}`
-      };
-    }
-  }
 
-  // Handle save command
-  if (command.toLowerCase().includes('save')) {
-    try {
-      const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
-
-      const config = {
-        method: 'post',
-        maxBodyLength: Infinity,
-        url: `${PALWORLD_BASE_URL}/v1/api/save`,
-        headers: {
-          'Authorization': `Basic ${authString}`
+    case 'players':
+    case 'listplayers':
+      try {
+        const players = await handleGetPlayers();
+        if (players.length === 0) {
+          return { success: true, rawResult: 'No players online' };
         }
-      };
+        const playerList = players.map((p: any) =>
+          `  ${p.name} (ID: ${p.gameId}, IP: ${p.ip || 'N/A'}, Ping: ${p.ping || 'N/A'})`
+        ).join('\n');
+        return {
+          success: true,
+          rawResult: `Online Players (${players.length}):\n${playerList}`
+        };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
 
-      const response = await axios(config);
-      logger.info('World saved successfully');
-      return {
-        success: true,
-        rawResult: 'World saved'
-      };
-    } catch (error: any) {
-      logger.error(`Failed to save world: ${error.message}`);
+    case 'serverinfo':
+    case 'info':
+      try {
+        const info = await handleGetServerInfo();
+        return {
+          success: true,
+          rawResult: `Server Information:\n${JSON.stringify(info, null, 2)}`
+        };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'metrics':
+      try {
+        const metrics = await handleGetServerMetrics();
+        return {
+          success: true,
+          rawResult: `Server Metrics:\n${JSON.stringify(metrics, null, 2)}`
+        };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'settings':
+      try {
+        const settings = await handleGetServerSettings();
+        return {
+          success: true,
+          rawResult: `Server Settings:\n${JSON.stringify(settings, null, 2)}`
+        };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'announce':
+      const announceMessage = cmdArguments.join(' ');
+      if (!announceMessage) {
+        return { success: false, rawResult: 'Usage: announce <message>' };
+      }
+      try {
+        const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+        const data = JSON.stringify({ message: announceMessage });
+        const config = {
+          method: 'post',
+          maxBodyLength: Infinity,
+          url: `${PALWORLD_BASE_URL}/v1/api/announce`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${authString}`
+          },
+          data: data
+        };
+        await axios(config);
+        logger.info('Message announced successfully');
+        return { success: true, rawResult: `Announced: "${announceMessage}"` };
+      } catch (error: any) {
+        logger.error(`Failed to announce message: ${error.message}`);
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'save':
+      try {
+        const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+        const config = {
+          method: 'post',
+          maxBodyLength: Infinity,
+          url: `${PALWORLD_BASE_URL}/v1/api/save`,
+          headers: { 'Authorization': `Basic ${authString}` }
+        };
+        await axios(config);
+        logger.info('World saved successfully');
+        return { success: true, rawResult: 'World saved successfully' };
+      } catch (error: any) {
+        logger.error(`Failed to save world: ${error.message}`);
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'shutdown':
+      try {
+        const waittime = parseInt(cmdArguments[0]) || 10;
+        const shutdownMsg = cmdArguments.slice(1).join(' ') || 'Server shutting down';
+        const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+        const data = JSON.stringify({ waittime, message: shutdownMsg });
+        const config = {
+          method: 'post',
+          maxBodyLength: Infinity,
+          url: `${PALWORLD_BASE_URL}/v1/api/shutdown`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${authString}`
+          },
+          data: data
+        };
+        await axios(config);
+        logger.info('Server shutdown initiated');
+        return { success: true, rawResult: `Server shutting down in ${waittime} seconds` };
+      } catch (error: any) {
+        logger.error(`Failed to shutdown server: ${error.message}`);
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'stop':
+      try {
+        const result = await handleStopServer();
+        return result.success
+          ? { success: true, rawResult: 'Server stopped immediately' }
+          : { success: false, rawResult: result.error };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'ban':
+      if (cmdArguments.length === 0) {
+        return { success: false, rawResult: 'Usage: ban <player_name>' };
+      }
+      try {
+        const playerName = cmdArguments.join(' ');
+        const players = await handleGetPlayers();
+        const player = players.find((p: any) => p.name.toLowerCase() === playerName.toLowerCase());
+        if (!player) {
+          return { success: false, rawResult: `Player "${playerName}" not found online` };
+        }
+        const result = await handleBanPlayer({ gameId: player.gameId });
+        return result.success
+          ? { success: true, rawResult: `Banned player: ${player.name} (${player.gameId})` }
+          : { success: false, rawResult: result.error };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'kick':
+      if (cmdArguments.length === 0) {
+        return { success: false, rawResult: 'Usage: kick <player_name>' };
+      }
+      try {
+        const playerName = cmdArguments.join(' ');
+        const players = await handleGetPlayers();
+        const player = players.find((p: any) => p.name.toLowerCase() === playerName.toLowerCase());
+        if (!player) {
+          return { success: false, rawResult: `Player "${playerName}" not found online` };
+        }
+        const result = await handleKickPlayer({ gameId: player.gameId });
+        return result.success
+          ? { success: true, rawResult: `Kicked player: ${player.name} (${player.gameId})` }
+          : { success: false, rawResult: result.error };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'unban':
+      if (cmdArguments.length === 0) {
+        return { success: false, rawResult: 'Usage: unban <steam_id>' };
+      }
+      try {
+        const userId = cmdArguments[0];
+        const result = await handleUnbanPlayer({ gameId: userId });
+        return result.success
+          ? { success: true, rawResult: `Unbanned user: ${userId}` }
+          : { success: false, rawResult: result.error };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    default:
       return {
         success: false,
-        rawResult: `Error: ${error.message}`
+        rawResult: `Unknown command: "${cmd}". Type "help" for available commands.`
       };
-    }
   }
-
-  // Handle shutdown command
-  if (command.toLowerCase().includes('shutdown')) {
-    try {
-      const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
-
-      const data = JSON.stringify({
-        waittime: 10,
-        message: 'Server shutting down'
-      });
-
-      const config = {
-        method: 'post',
-        maxBodyLength: Infinity,
-        url: `${PALWORLD_BASE_URL}/v1/api/shutdown`,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${authString}`
-        },
-        data: data
-      };
-
-      const response = await axios(config);
-      logger.info('Server shutdown initiated');
-      return {
-        success: true,
-        rawResult: 'Server shutdown initiated'
-      };
-    } catch (error: any) {
-      logger.error(`Failed to shutdown server: ${error.message}`);
-      return {
-        success: false,
-        rawResult: `Error: ${error.message}`
-      };
-    }
-  }
-
-  return {
-    success: false,
-    rawResult: 'Command not supported'
-  };
 }
 
 /**
