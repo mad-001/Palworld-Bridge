@@ -606,9 +606,28 @@ async function handleUnbanPlayer(args: any) {
   const userId = unbanArgs.gameId || unbanArgs.userId;
 
   try {
-    await palworldApi.post('/api/rest-api/unban', { userid: userId });
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+    const data = JSON.stringify({
+      userid: userId
+    });
+
+    const config = {
+      method: 'post',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/unban`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${authString}`
+      },
+      data: data
+    };
+
+    const response = await axios(config);
+    logger.info(`Player ${userId} unbanned successfully`);
     return { success: true };
   } catch (error: any) {
+    logger.error(`Failed to unban player ${userId}: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
