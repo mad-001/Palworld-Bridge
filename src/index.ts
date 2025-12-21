@@ -519,15 +519,32 @@ async function handleExecuteCommand(args: any) {
   // Handle shutdown command
   if (command.toLowerCase().includes('shutdown')) {
     try {
-      await palworldApi.post('/api/rest-api/shutdown', {
+      const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+      const data = JSON.stringify({
         waittime: 10,
         message: 'Server shutting down'
       });
+
+      const config = {
+        method: 'post',
+        maxBodyLength: Infinity,
+        url: `${PALWORLD_BASE_URL}/v1/api/shutdown`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${authString}`
+        },
+        data: data
+      };
+
+      const response = await axios(config);
+      logger.info('Server shutdown initiated');
       return {
         success: true,
         rawResult: 'Server shutdown initiated'
       };
     } catch (error: any) {
+      logger.error(`Failed to shutdown server: ${error.message}`);
       return {
         success: false,
         rawResult: `Error: ${error.message}`
