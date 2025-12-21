@@ -272,6 +272,10 @@ async function handleTakaroRequest(message: any) {
         responsePayload = await handleUnbanPlayer(args);
         break;
 
+      case 'stopServer':
+        responsePayload = await handleStopServer();
+        break;
+
       case 'listBans':
         responsePayload = [];
         break;
@@ -658,6 +662,31 @@ async function handleUnbanPlayer(args: any) {
     return { success: true };
   } catch (error: any) {
     logger.error(`Failed to unban player ${userId}: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Stop the Palworld server immediately
+ */
+async function handleStopServer() {
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+    const config = {
+      method: 'post',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/stop`,
+      headers: {
+        'Authorization': `Basic ${authString}`
+      }
+    };
+
+    const response = await axios(config);
+    logger.info('Server stop initiated');
+    return { success: true, rawResult: 'Server stopped' };
+  } catch (error: any) {
+    logger.error(`Failed to stop server: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
