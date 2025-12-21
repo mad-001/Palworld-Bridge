@@ -13,6 +13,7 @@
 - **WebSocket Connection** - Instant server events and status updates
 - **Player Management** - Ban, kick, and manage players by name
 - **Server Control** - Save, shutdown, stop, and announce commands
+- **Chat Integration** - In-game chat forwarding to Takaro/Discord (UE4SS mod)
 
 ## 📥 Installation
 
@@ -65,7 +66,96 @@
    pm2 start dist/index.js --name palworld-bridge
    ```
 
-## 💬 Console Commands
+## 💬 Chat Integration (Optional)
+
+The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Takaro and Discord.
+
+### Prerequisites
+
+- **UE4SS** - Download from [UE4SS Releases](https://github.com/UE4SS-RE/RE-UE4SS/releases)
+  - Get the latest `UE4SS_v3.x.x.zip` release
+  - Version 3.0.0 or higher recommended
+
+### Installation Steps
+
+1. **Install UE4SS**
+
+   a. Download UE4SS from the link above
+
+   b. Extract the ZIP file
+
+   c. Copy these files to your Palworld server directory `PalServer\Pal\Binaries\Win64\`:
+      - `dwmapi.dll`
+      - `UE4SS.dll`
+      - `UE4SS-settings.ini`
+      - The entire `Mods` folder
+
+2. **Install TakaroChat Mod**
+
+   a. Copy the `TakaroChat` folder from this repository to:
+      ```
+      PalServer\Pal\Binaries\Win64\Mods\TakaroChat\
+      ```
+
+   b. Your directory structure should look like:
+      ```
+      PalServer\Pal\Binaries\Win64\
+      ├── dwmapi.dll
+      ├── UE4SS.dll
+      ├── UE4SS-settings.ini
+      └── Mods\
+          └── TakaroChat\
+              ├── enabled.txt
+              └── Scripts\
+                  ├── main.lua
+                  └── config.lua
+      ```
+
+3. **Configure TakaroChat**
+
+   Edit `TakaroChat/Scripts/config.lua`:
+   ```lua
+   -- Bridge Connection
+   config.BridgeHost = "127.0.0.1"  -- Bridge IP (same machine)
+   config.BridgePort = 3000          -- Bridge port (default 3000)
+
+   -- Chat Settings
+   config.EnableChatForwarding = true
+   config.CaptureCategories = {1, 2, 3}  -- Say, Guild, Global
+   ```
+
+4. **Restart Palworld Server**
+
+   Stop and start your Palworld server to load UE4SS and the mod.
+
+### Features
+- ✅ Game chat → Takaro platform → Discord
+- ✅ Discord → Takaro → Game chat relay
+- ✅ Player connect/disconnect events
+- ✅ Support for Say, Guild, and Global chat channels
+- ✅ Real-time event forwarding
+- ✅ Configurable logging and filtering
+
+### Troubleshooting
+
+**UE4SS not loading:**
+- Ensure `dwmapi.dll` is in the correct directory
+- Check Windows didn't block the DLL (right-click → Properties → Unblock)
+- Verify UE4SS version compatibility (3.0.0+)
+
+**Chat not appearing in Discord:**
+- Check bridge logs for connection from UE4SS mod
+- Verify `config.BridgePort` matches bridge's HTTP server port
+- Ensure chat forwarding module is installed in Takaro
+
+**Mod not loading:**
+- Confirm `enabled.txt` exists in `TakaroChat` folder
+- Check `UE4SS\Mods\mods.txt` includes TakaroChat entry
+- Review UE4SS logs in `UE4SS\UE4SS.log`
+
+See [TakaroChat/README.md](TakaroChat/README.md) for detailed configuration options.
+
+## 💻 Console Commands
 
 Use these commands in the Takaro web console:
 

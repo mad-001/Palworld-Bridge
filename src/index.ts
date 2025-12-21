@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import winston from 'winston';
 import axios, { AxiosInstance } from 'axios';
+import express from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
@@ -37,6 +38,26 @@ function loadConfig() {
 
 loadConfig();
 
+// Create logs directory if it doesn't exist
+const logsDir = path.join(process.cwd(), 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+
+// Function to get current log filename
+function getLogFilename(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  return path.join(logsDir, `${year}-${month}-${day}_${hour}.log`);
+}
+
+// Logger state for hourly rotation
+let currentLogFilename = getLogFilename();
+let fileTransport = new winston.transports.File({ filename: currentLogFilename });
+
 // Configure logger
 const logger = winston.createLogger({
   level: 'info',
@@ -48,9 +69,27 @@ const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console(),
-    new winston.transports.File({ filename: 'palworld-bridge.log' })
+    fileTransport
   ]
 });
+
+// Rotate log file every hour
+setInterval(() => {
+  const newLogFilename = getLogFilename();
+  if (newLogFilename !== currentLogFilename) {
+    logger.info('Rotating log file...');
+
+    // Remove old file transport
+    logger.remove(fileTransport);
+
+    // Create new file transport
+    currentLogFilename = newLogFilename;
+    fileTransport = new winston.transports.File({ filename: currentLogFilename });
+    logger.add(fileTransport);
+
+    logger.info('Log file rotated to: ' + currentLogFilename);
+  }
+}, 60000); // Check every minute
 
 // Configuration
 const TAKARO_WS_URL = 'wss://connect.takaro.io/';
@@ -63,6 +102,9 @@ const PALWORLD_PORT = parseInt(process.env.PALWORLD_PORT || '8212', 10);
 const PALWORLD_BASE_URL = `http://${PALWORLD_HOST}:${PALWORLD_PORT}`;
 const PALWORLD_USERNAME = process.env.PALWORLD_USERNAME || 'admin';
 const PALWORLD_PASSWORD = process.env.PALWORLD_PASSWORD || '';
+
+// HTTP Server Configuration (for receiving chat from UE4SS mod)
+const HTTP_PORT = parseInt(process.env.HTTP_PORT || '3001', 10);
 
 // Takaro WebSocket connection
 let takaroWs: WebSocket | null = null;
@@ -80,6 +122,18 @@ const MAX_RECONNECT_DELAY = 60000; // 60 seconds
 const BASE_RECONNECT_DELAY = 3000; // 3 seconds
 const SERVER_CHECK_INTERVAL = 5000; // Check server every 5 seconds
 
+// Player inventory cache
+interface PlayerInventory {
+  playerName: string;
+  inventory: any[];
+  timestamp: string;
+}
+const playerInventories = new Map<string, PlayerInventory>();
+
+// Track online players to detect connect/disconnect
+let lastKnownPlayers = new Set<string>();
+const playerCache = new Map<string, { gameId: string; name: string; steamId: string }>();
+
 // Metrics
 const metrics = {
   requestsReceived: 0,
@@ -88,6 +142,164 @@ const metrics = {
   lastRequestTime: Date.now(),
   startTime: Date.now()
 };
+
+// Initialize Express app for chat endpoint
+const app = express();
+app.use(express.json());
+
+/**
+ * Chat/Events endpoint - receives in-game events from UE4SS mod
+ */
+app.post('/chat', async (req, res) => {
+  try {
+    const { type, playerName, message, category, categoryName, timestamp, data } = req.body;
+
+    // Handle different event types
+    switch (type) {
+      case 'chat':
+        logger.info(`[CHAT] [${categoryName || category}] ${playerName}: ${message}`);
+        if (isConnectedToTakaro) {
+          await sendChatEvent({
+            playerName,
+            message,
+            category,
+            categoryName,
+            timestamp
+          });
+        }
+        break;
+
+      case 'player_connect':
+        logger.info(`[EVENT] Player connected: ${playerName}`);
+        if (isConnectedToTakaro) {
+          await sendPlayerEvent('player-connected', playerName, timestamp);
+        }
+        break;
+
+      case 'player_disconnect':
+        logger.info(`[EVENT] Player disconnected: ${playerName}`);
+        if (isConnectedToTakaro) {
+          await sendPlayerEvent('player-disconnected', playerName, timestamp);
+        }
+        break;
+
+      case 'player_death':
+        logger.info(`[EVENT] Player died: ${playerName}`);
+        if (isConnectedToTakaro) {
+          await sendPlayerEvent('player-death', playerName, timestamp);
+        }
+        break;
+
+      case 'inventory':
+        const { inventory } = req.body;
+        // Only log if player has items
+        if (inventory && inventory.length > 0) {
+          logger.info(`[INVENTORY] Updated for: ${playerName} (${inventory.length} items)`);
+        }
+        playerInventories.set(playerName, {
+          playerName,
+          inventory: inventory || [],
+          timestamp: timestamp || new Date().toISOString()
+        });
+        break;
+
+      default:
+        logger.warn(`Unknown event type: ${type}`);
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    logger.error(`Event endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Send chat event to Takaro
+ */
+async function sendChatEvent(chatData: any) {
+  try {
+    // Use cached player data instead of API call (calling API during chat causes kicks)
+    let player: any = null;
+    for (const cachedPlayer of playerCache.values()) {
+      if (cachedPlayer.name === chatData.playerName) {
+        player = cachedPlayer;
+        break;
+      }
+    }
+
+    // Map Palworld categories to ChatChannel enum - must match exact enum values
+    // 1 = Say, 2 = Guild, 3 = Global
+    const category = Number(chatData.category);
+    const channel = (category === 2) ? 'team' : 'global';
+
+    const event = {
+      type: 'gameEvent',
+      payload: {
+        type: 'chat-message',
+        data: {
+          type: 'chat-message',
+          msg: chatData.message,
+          player: player ? {
+            name: player.name,
+            gameId: player.gameId,
+            steamId: player.steamId
+          } : {
+            name: chatData.playerName,
+            gameId: chatData.playerName // Fallback if player not in cache yet
+          },
+          channel: channel
+        }
+      }
+    };
+
+    if (sendToTakaro(event)) {
+      logger.info(`Sent chat-message event to Takaro: ${chatData.playerName}: ${chatData.message}`);
+    }
+  } catch (error: any) {
+    logger.error(`Error sending chat event: ${error.message}`);
+  }
+}
+
+/**
+ * Send player event to Takaro (connect/disconnect/death)
+ */
+async function sendPlayerEvent(eventType: string, playerName: string, timestamp?: string) {
+  try {
+    // Use cached player data instead of API call
+    let player: any = null;
+    for (const cachedPlayer of playerCache.values()) {
+      if (cachedPlayer.name === playerName) {
+        player = cachedPlayer;
+        break;
+      }
+    }
+
+    const event = {
+      type: 'gameEvent',
+      payload: {
+        type: eventType,
+        data: {
+          type: eventType,
+          player: player ? {
+            name: player.name,
+            gameId: player.gameId,
+            steamId: player.steamId || player.gameId
+          } : {
+            name: playerName,
+            gameId: playerName // Fallback if player not in cache
+          }
+        }
+      }
+    };
+
+    if (sendToTakaro(event)) {
+      logger.info(`Sent ${eventType} event to Takaro: ${playerName}`);
+    }
+  } catch (error: any) {
+    logger.error(`Error sending player event: ${error.message}`);
+  }
+}
 
 /**
  * Initialize Palworld REST API client
@@ -174,8 +386,6 @@ function sendIdentify() {
  * Handle messages from Takaro
  */
 function handleTakaroMessage(message: any) {
-  logger.info(`Received from Takaro: ${message.type}`);
-
   switch (message.type) {
     case 'identifyResponse':
       handleIdentifyResponse(message);
@@ -224,8 +434,6 @@ async function handleTakaroRequest(message: any) {
   metrics.requestsReceived++;
   metrics.lastRequestTime = Date.now();
 
-  logger.info(`Takaro request: ${action} (ID: ${requestId})`);
-
   let responsePayload: any;
 
   try {
@@ -255,6 +463,20 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'sendMessage':
+        // Discord→Game messages: module already formats as "name: message"
+        if (args) {
+          const messageArgs = typeof args === 'string' ? JSON.parse(args) : args;
+          const message = messageArgs.message || '';
+
+          // Use message as-is (already formatted by module)
+          responsePayload = await handleExecuteCommand({
+            command: `announce ${message}`
+          });
+        } else {
+          responsePayload = { success: false, error: 'No message provided' };
+        }
+        break;
+
       case 'executeCommand':
       case 'executeConsoleCommand':
         responsePayload = await handleExecuteCommand(args);
@@ -285,7 +507,7 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'getPlayerInventory':
-        responsePayload = [];
+        responsePayload = await handleGetPlayerInventory(args);
         break;
 
       default:
@@ -299,7 +521,6 @@ async function handleTakaroRequest(message: any) {
     responsePayload = { error: error.message };
   }
 
-  logger.info(`Sending response for ${action}: ${JSON.stringify(responsePayload)}`);
   sendTakaroResponse(requestId, responsePayload);
 }
 
@@ -357,8 +578,7 @@ async function handleGetPlayers() {
     const response = await axios(config);
     const players = response.data.players || [];
 
-    logger.info(`Got ${players.length} players from Palworld server`);
-    return players.map((player: any) => ({
+    const mappedPlayers = players.map((player: any) => ({
       gameId: String(player.userId),
       name: String(player.name),
       platformId: `palworld:${player.userId}`,
@@ -369,6 +589,40 @@ async function handleGetPlayers() {
       positionY: player.location_y !== undefined ? player.location_y : (player.y !== undefined ? player.y : undefined),
       positionZ: player.location_z !== undefined ? player.location_z : (player.z !== undefined ? player.z : undefined)
     }));
+
+    // Detect player connect/disconnect by comparing with last known players
+    if (isConnectedToTakaro) {
+      const currentPlayers = new Set<string>(mappedPlayers.map((p: any) => p.gameId));
+
+      // Detect new players (connected)
+      for (const player of mappedPlayers) {
+        // Cache player data
+        playerCache.set(player.gameId, { gameId: player.gameId, name: player.name, steamId: player.steamId });
+
+        if (lastKnownPlayers.size > 0 && !lastKnownPlayers.has(player.gameId)) {
+          logger.info(`Detected player connect: ${player.name} (${player.gameId})`);
+          await sendPlayerEvent('player-connected', player.name);
+        }
+      }
+
+      // Detect missing players (disconnected)
+      if (lastKnownPlayers.size > 0) {
+        for (const lastPlayerId of lastKnownPlayers) {
+          if (!currentPlayers.has(lastPlayerId)) {
+            // Get player name from cache
+            const cachedPlayer = playerCache.get(lastPlayerId);
+            const playerName = cachedPlayer ? cachedPlayer.name : lastPlayerId;
+            logger.info(`Detected player disconnect: ${playerName} (${lastPlayerId})`);
+            await sendPlayerEvent('player-disconnected', playerName);
+          }
+        }
+      }
+
+      // Update last known players
+      lastKnownPlayers = currentPlayers;
+    }
+
+    return mappedPlayers;
   } catch (error: any) {
     logger.error(`Failed to get players: ${error.message}`);
     return [];
@@ -484,6 +738,42 @@ async function handleGetPlayerLocation(args: any) {
   } catch (error: any) {
     logger.error(`Failed to get player location: ${error.message}`);
     return { x: 0, y: 0, z: 0 };
+  }
+}
+
+/**
+ * Get player inventory from cache
+ */
+async function handleGetPlayerInventory(args: any) {
+  try {
+    const inventoryArgs = typeof args === 'string' ? JSON.parse(args) : args;
+    const playerId = inventoryArgs.gameId || inventoryArgs.playerId || inventoryArgs.userId;
+
+    if (!playerId) {
+      logger.error('No player ID provided for getPlayerInventory');
+      return [];
+    }
+
+    // Try to find inventory by player ID or name
+    // Since we cache by name, we need to get the player's name first
+    const players = await handleGetPlayers();
+    const player = players.find((p: any) => p.gameId === playerId || p.steamId === playerId || p.name === playerId);
+
+    if (!player) {
+      logger.warn(`Player ${playerId} not found for inventory lookup`);
+      return [];
+    }
+
+    const cachedInventory = playerInventories.get(player.name);
+
+    if (!cachedInventory) {
+      return [];
+    }
+
+    return cachedInventory.inventory;
+  } catch (error: any) {
+    logger.error(`Failed to get player inventory: ${error.message}`);
+    return [];
   }
 }
 
@@ -911,8 +1201,20 @@ initPalworldApi();
 // Start server monitoring (like Astroneer's RCON connection state)
 startServerMonitoring();
 
+// Start HTTP server for chat endpoint
+app.listen(HTTP_PORT, () => {
+  logger.info(`HTTP server listening on port ${HTTP_PORT} for chat events`);
+});
+
 // Connect to Takaro
 connectToTakaro();
+
+// Poll for player changes every 10 seconds
+setInterval(async () => {
+  if (isConnectedToTakaro) {
+    await handleGetPlayers();
+  }
+}, 10000);
 
 // Handle process termination
 process.on('SIGINT', () => {
