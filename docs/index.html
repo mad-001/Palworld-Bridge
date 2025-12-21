@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Palworld-Takaro Bridge</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.8em;
+        }
+
+        h3 {
+            color: #764ba2;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .download-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 10px 0;
+            transition: transform 0.2s;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .version-badge {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+
+        ul {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .feature-item {
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .links {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .link-btn {
+            padding: 10px 20px;
+            background: #f0f0f0;
+            color: #333;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.2s;
+        }
+
+        .link-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .console-commands {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+
+        .command {
+            font-family: 'Courier New', monospace;
+            background: white;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 3px;
+            border-left: 3px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦖 Palworld-Takaro Bridge</h1>
+            <p class="subtitle">Connect your Palworld dedicated server to Takaro</p>
+        </header>
+
+        <div class="card">
+            <h2>About</h2>
+            <p>The Palworld-Takaro Bridge is a WebSocket-based integration that connects Palworld dedicated servers to the Takaro game server management platform. This bridge enables real-time player tracking, server management, and remote command execution through Takaro's web console.</p>
+        </div>
+
+        <div class="card">
+            <h2>Download</h2>
+            <span class="version-badge">Version 1.0.1</span>
+            <br>
+            <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" class="download-btn">Download Latest Release</a>
+
+            <h3>What's New in 1.0.1</h3>
+            <ul>
+                <li>✅ Full v1 API integration with all 11 Palworld REST API endpoints</li>
+                <li>✅ Console commands support (help, players, serverinfo, metrics, ban, kick, etc.)</li>
+                <li>✅ Real-time player location tracking</li>
+                <li>✅ Player management with name-based ban/kick lookup</li>
+                <li>✅ Server metrics and settings monitoring</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Features</h2>
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <h3>🎮 Full API Support</h3>
+                    <p>All 11 Palworld v1 API endpoints supported including players, info, metrics, settings, and server control</p>
+                </div>
+                <div class="feature-item">
+                    <h3>💬 Console Commands</h3>
+                    <p>Run commands directly from Takaro's web console to manage players and server</p>
+                </div>
+                <div class="feature-item">
+                    <h3>📍 Location Tracking</h3>
+                    <p>Real-time player position tracking with X, Y coordinates</p>
+                </div>
+                <div class="feature-item">
+                    <h3>⚡ Real-time Events</h3>
+                    <p>WebSocket connection for instant player events and server status updates</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Quick Start</h2>
+            <h3>1. Prerequisites</h3>
+            <ul>
+                <li>Palworld dedicated server with REST API enabled</li>
+                <li>Node.js 18 or higher</li>
+                <li>Takaro account and server registration token</li>
+            </ul>
+
+            <h3>2. Enable Palworld REST API</h3>
+            <p>Edit your Palworld server's <code>PalWorldSettings.ini</code>:</p>
+            <pre>RESTAPIEnabled=True
+RESTAPIPort=8212
+AdminPassword=YourSecurePassword</pre>
+
+            <h3>3. Install Bridge</h3>
+            <pre>cd /path/to/Palworld-Bridge
+npm install
+npm run build</pre>
+
+            <h3>4. Configure</h3>
+            <p>Create <code>TakaroConfig.txt</code> in the bridge directory:</p>
+            <pre># Takaro Connection
+IDENTITY_TOKEN=YourIdentityToken
+REGISTRATION_TOKEN=YourRegistrationToken
+
+# Palworld Server Settings
+PALWORLD_HOST=127.0.0.1
+PALWORLD_PORT=8212
+PALWORLD_USERNAME=admin
+PALWORLD_PASSWORD=YourAdminPassword</pre>
+
+            <h3>5. Start Bridge</h3>
+            <pre>npm start
+# Or with PM2 for production:
+pm2 start dist/index.js --name palworld-bridge</pre>
+        </div>
+
+        <div class="card">
+            <h2>Console Commands</h2>
+            <p>Use these commands in the Takaro web console:</p>
+
+            <div class="console-commands">
+                <div class="command"><strong>help</strong> - Show all available commands</div>
+                <div class="command"><strong>players</strong> - List all online players with details</div>
+                <div class="command"><strong>serverinfo</strong> - Get server information</div>
+                <div class="command"><strong>metrics</strong> - Get server metrics</div>
+                <div class="command"><strong>settings</strong> - Get server settings</div>
+                <div class="command"><strong>announce &lt;message&gt;</strong> - Send announcement to all players</div>
+                <div class="command"><strong>save</strong> - Save the world</div>
+                <div class="command"><strong>shutdown [seconds] [message]</strong> - Shutdown server with countdown</div>
+                <div class="command"><strong>stop</strong> - Stop server immediately</div>
+                <div class="command"><strong>ban &lt;player_name&gt;</strong> - Ban a player by name</div>
+                <div class="command"><strong>kick &lt;player_name&gt;</strong> - Kick a player by name</div>
+                <div class="command"><strong>unban &lt;steam_id&gt;</strong> - Unban a player by Steam ID</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Supported API Endpoints</h2>
+            <h3>GET Endpoints</h3>
+            <ul>
+                <li><code>/v1/api/info</code> - Server information</li>
+                <li><code>/v1/api/players</code> - Player list with locations</li>
+                <li><code>/v1/api/settings</code> - Server settings</li>
+                <li><code>/v1/api/metrics</code> - Server metrics</li>
+            </ul>
+
+            <h3>POST Endpoints</h3>
+            <ul>
+                <li><code>/v1/api/announce</code> - Send announcements</li>
+                <li><code>/v1/api/save</code> - Save world</li>
+                <li><code>/v1/api/shutdown</code> - Graceful shutdown</li>
+                <li><code>/v1/api/stop</code> - Immediate stop</li>
+                <li><code>/v1/api/kick</code> - Kick player</li>
+                <li><code>/v1/api/ban</code> - Ban player</li>
+                <li><code>/v1/api/unban</code> - Unban player</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Troubleshooting</h2>
+            <h3>Bridge won't connect to Takaro</h3>
+            <ul>
+                <li>Verify IDENTITY_TOKEN and REGISTRATION_TOKEN are correct</li>
+                <li>Check bridge logs for connection errors</li>
+                <li>Ensure internet connectivity</li>
+            </ul>
+
+            <h3>Can't connect to Palworld server</h3>
+            <ul>
+                <li>Confirm REST API is enabled in PalWorldSettings.ini</li>
+                <li>Verify AdminPassword matches between config and server</li>
+                <li>Check server is running and port 8212 is accessible</li>
+            </ul>
+
+            <h3>Commands not working</h3>
+            <ul>
+                <li>Ensure bridge is connected (check logs)</li>
+                <li>Verify you're typing commands in Takaro console, not in-game</li>
+                <li>Check command syntax with <code>help</code> command</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Resources</h2>
+            <div class="links">
+                <a href="https://github.com/mad-001/Palworld-Bridge" class="link-btn">GitHub Repository</a>
+                <a href="https://github.com/mad-001/Palworld-Bridge/releases" class="link-btn">Releases</a>
+                <a href="https://takaro.io" class="link-btn">Takaro Platform</a>
+                <a href="https://docs.takaro.io" class="link-btn">Takaro Docs</a>
+            </div>
+        </div>
+
+        <div class="card" style="text-align: center; color: #666;">
+            <p>Created with ❤️ for the Palworld community</p>
+            <p style="margin-top: 10px;">© 2025 | <a href="https://github.com/mad-001" style="color: #667eea;">mad-001</a></p>
+        </div>
+    </div>
+</body>
+</html>
