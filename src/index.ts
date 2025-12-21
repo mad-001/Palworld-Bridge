@@ -367,10 +367,7 @@ async function handleGetPlayers() {
       ping: player.ping !== undefined ? player.ping : undefined,
       positionX: player.location_x !== undefined ? player.location_x : (player.x !== undefined ? player.x : undefined),
       positionY: player.location_y !== undefined ? player.location_y : (player.y !== undefined ? player.y : undefined),
-      positionZ: player.location_z !== undefined ? player.location_z : (player.z !== undefined ? player.z : undefined),
-      accountName: player.accountName || undefined,
-      playerId: player.playerId || undefined,
-      level: player.level !== undefined ? player.level : undefined
+      positionZ: player.location_z !== undefined ? player.location_z : (player.z !== undefined ? player.z : undefined)
     }));
   } catch (error: any) {
     logger.error(`Failed to get players: ${error.message}`);
