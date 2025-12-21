@@ -364,7 +364,10 @@ async function handleGetPlayers() {
       platformId: `palworld:${player.userId}`,
       steamId: String(player.userId),
       ip: player.ip || undefined,
-      ping: player.ping !== undefined ? player.ping : undefined
+      ping: player.ping !== undefined ? player.ping : undefined,
+      positionX: player.location_x !== undefined ? player.location_x : (player.x !== undefined ? player.x : undefined),
+      positionY: player.location_y !== undefined ? player.location_y : (player.y !== undefined ? player.y : undefined),
+      positionZ: player.location_z !== undefined ? player.location_z : (player.z !== undefined ? player.z : undefined)
     }));
   } catch (error: any) {
     logger.error(`Failed to get players: ${error.message}`);
