@@ -281,7 +281,7 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'getPlayerLocation':
-        responsePayload = { x: 0, y: 0, z: 0 };
+        responsePayload = await handleGetPlayerLocation(args);
         break;
 
       case 'getPlayerInventory':
@@ -450,6 +450,40 @@ async function handleGetServerMetrics() {
   } catch (error: any) {
     logger.error(`Failed to get server metrics: ${error.message}`);
     return {};
+  }
+}
+
+/**
+ * Get player location by player ID
+ */
+async function handleGetPlayerLocation(args: any) {
+  try {
+    const locationArgs = typeof args === 'string' ? JSON.parse(args) : args;
+    const playerId = locationArgs.gameId || locationArgs.playerId || locationArgs.userId;
+
+    if (!playerId) {
+      logger.error('No player ID provided for getPlayerLocation');
+      return { x: 0, y: 0, z: 0 };
+    }
+
+    // Get all players to find the requested player
+    const players = await handleGetPlayers();
+    const player = players.find((p: any) => p.gameId === playerId || p.steamId === playerId);
+
+    if (!player) {
+      logger.warn(`Player ${playerId} not found for location lookup`);
+      return { x: 0, y: 0, z: 0 };
+    }
+
+    // Return location in Takaro's expected format
+    return {
+      x: player.positionX !== undefined ? player.positionX : 0,
+      y: player.positionY !== undefined ? player.positionY : 0,
+      z: player.positionZ !== undefined ? player.positionZ : 0
+    };
+  } catch (error: any) {
+    logger.error(`Failed to get player location: ${error.message}`);
+    return { x: 0, y: 0, z: 0 };
   }
 }
 
