@@ -455,12 +455,31 @@ async function handleExecuteCommand(args: any) {
   if (command.toLowerCase().includes('announce') || cmdArgs.message) {
     const message = cmdArgs.message || command;
     try {
-      await palworldApi.post('/api/rest-api/announce', { message });
+      const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+      const data = JSON.stringify({
+        message: message
+      });
+
+      const config = {
+        method: 'post',
+        maxBodyLength: Infinity,
+        url: `${PALWORLD_BASE_URL}/v1/api/announce`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${authString}`
+        },
+        data: data
+      };
+
+      const response = await axios(config);
+      logger.info('Message announced successfully');
       return {
         success: true,
         rawResult: 'Message announced'
       };
     } catch (error: any) {
+      logger.error(`Failed to announce message: ${error.message}`);
       return {
         success: false,
         rawResult: `Error: ${error.message}`
