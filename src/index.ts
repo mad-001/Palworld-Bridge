@@ -284,6 +284,10 @@ async function handleTakaroRequest(message: any) {
         responsePayload = { x: 0, y: 0, z: 0 };
         break;
 
+      case 'getPlayerInventory':
+        responsePayload = [];
+        break;
+
       default:
         logger.warn(`Unknown action: ${action}`);
         responsePayload = { error: `Unknown action: ${action}` };
