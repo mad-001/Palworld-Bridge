@@ -536,12 +536,29 @@ async function handleKickPlayer(args: any) {
   const userId = kickArgs.gameId || kickArgs.userId;
 
   try {
-    await palworldApi.post('/api/rest-api/kick', {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+
+    const data = JSON.stringify({
       userid: userId,
       message: 'You have been kicked from the server'
     });
+
+    const config = {
+      method: 'post',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/kick`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${authString}`
+      },
+      data: data
+    };
+
+    const response = await axios(config);
+    logger.info(`Player ${userId} kicked successfully`);
     return { success: true };
   } catch (error: any) {
+    logger.error(`Failed to kick player ${userId}: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
