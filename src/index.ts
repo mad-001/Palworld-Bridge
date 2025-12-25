@@ -183,14 +183,28 @@ app.post('/chat', async (req, res) => {
       case 'player_connect':
         logger.info(`[EVENT] Player connected: ${playerName}`);
         if (isConnectedToTakaro) {
-          await sendPlayerEvent('player-connected', playerName, timestamp);
+          // Fetch current players to get gameId for the connected player
+          const players = await handleGetPlayers();
+          const connectedPlayer = players.find((p: any) =>
+            p.name.toLowerCase() === playerName.toLowerCase()
+          );
+          if (connectedPlayer) {
+            await sendPlayerEvent('player-connected', connectedPlayer.name, timestamp, connectedPlayer.gameId);
+          } else {
+            logger.warn(`Could not find gameId for connected player: ${playerName}`);
+          }
         }
         break;
 
       case 'player_disconnect':
         logger.info(`[EVENT] Player disconnected: ${playerName}`);
         if (isConnectedToTakaro) {
-          await sendPlayerEvent('player-disconnected', playerName, timestamp);
+          // Use cached gameId for disconnect (player is offline now)
+          const cachedPlayer = Array.from(playerCache.values()).find(p =>
+            p.name.toLowerCase() === playerName.toLowerCase()
+          );
+          const gameId = cachedPlayer?.gameId;
+          await sendPlayerEvent('player-disconnected', playerName, timestamp, gameId);
         }
         break;
 
@@ -315,15 +329,29 @@ async function sendChatEvent(chatData: any) {
 /**
  * Send player event to Takaro (connect/disconnect/death)
  */
-async function sendPlayerEvent(eventType: string, playerName: string, timestamp?: string) {
+async function sendPlayerEvent(eventType: string, playerName: string, timestamp?: string, gameId?: string) {
   try {
-    // Use cached player data instead of API call
+    // Use provided gameId or look up in cache
     let player: any = null;
-    for (const cachedPlayer of playerCache.values()) {
-      if (cachedPlayer.name === playerName) {
-        player = cachedPlayer;
-        break;
+
+    if (gameId) {
+      // Use provided gameId
+      const cachedPlayer = playerCache.get(gameId);
+      player = cachedPlayer || { name: playerName, gameId: gameId, steamId: gameId };
+    } else {
+      // Try to find in cache by name
+      for (const cachedPlayer of playerCache.values()) {
+        if (cachedPlayer.name === playerName) {
+          player = cachedPlayer;
+          break;
+        }
       }
+    }
+
+    // Don't send event if we don't have a valid gameId
+    if (!player || !player.gameId) {
+      logger.error(`Cannot send ${eventType} event - no gameId for player: ${playerName}`);
+      return;
     }
 
     const event = {
@@ -332,20 +360,17 @@ async function sendPlayerEvent(eventType: string, playerName: string, timestamp?
         type: eventType,
         data: {
           type: eventType,
-          player: player ? {
+          player: {
             name: player.name,
             gameId: player.gameId,
             steamId: player.steamId || player.gameId
-          } : {
-            name: playerName,
-            gameId: playerName // Fallback if player not in cache
           }
         }
       }
     };
 
     if (sendToTakaro(event)) {
-      logger.info(`Sent ${eventType} event to Takaro: ${playerName}`);
+      logger.info(`Sent ${eventType} event to Takaro: ${playerName} (gameId: ${player.gameId})`);
     }
   } catch (error: any) {
     logger.error(`Error sending player event: ${error.message}`);
