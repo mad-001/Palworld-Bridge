@@ -306,70 +306,143 @@ end)
 
 logger:log(2, "Chat hook registered successfully")
 
--- Hook player login/connect events
-RegisterHook("/Script/Engine.PlayerController:ClientRestart", function(playerController)
+-- Player tracking for join/leave detection
+local knownPlayers = {}
+local playerCheckInterval = 5000 -- Check every 5 seconds
+
+-- Function to get current online players
+local function GetOnlinePlayers()
+    local players = {}
     local success, err = pcall(function()
-        local playerState = playerController:get().PlayerState
-        if playerState and playerState:IsValid() then
-            local playerName = playerState:get().PlayerNamePrivate:ToString()
-            if playerName and playerName ~= "" then
-                SendEventToBridge("player_connect", playerName, "{}")
-                logger:log(2, string.format("Player connected: %s", playerName))
+        local GameInstance = FindFirstOf("PalGameInstance")
+        if not GameInstance or not GameInstance:IsValid() then
+            return
+        end
+
+        local GameState = GameInstance:get().GameState
+        if not GameState or not GameState:IsValid() then
+            return
+        end
+
+        local PlayerArray = GameState:get().PlayerArray
+        if not PlayerArray then
+            return
+        end
+
+        for i = 1, PlayerArray:GetArrayNum() do
+            local PlayerState = PlayerArray:GetArrayElement(i)
+            if PlayerState and PlayerState:IsValid() then
+                local PlayerName = PlayerState:get().PlayerNamePrivate:ToString()
+                if PlayerName and PlayerName ~= "" then
+                    players[PlayerName] = true
+                end
             end
         end
     end)
 
     if not success then
-        logger:log(1, "Error in player connect hook: " .. tostring(err))
+        logger:log(1, "Error getting online players: " .. tostring(err))
     end
-end)
 
--- Hook player logout/disconnect events (trying multiple possible hooks)
-local disconnectHookRegistered = false
-local disconnectHooks = {
-    "/Script/Engine.GameMode:Logout",
-    "/Script/Pal.PalGameMode:Logout",
-    "/Script/Engine.PlayerController:OnDestroyed"
-}
-
-for _, hookName in ipairs(disconnectHooks) do
-    local hookSuccess = pcall(function()
-        RegisterHook(hookName, function(context, playerController)
-            local success, err = pcall(function()
-                local playerState
-                if playerController and playerController:IsValid() then
-                    playerState = playerController:get().PlayerState
-                elseif context and context:IsValid() then
-                    -- Try to get player state from context
-                    if context:get().PlayerState then
-                        playerState = context:get().PlayerState
-                    end
-                end
-
-                if playerState and playerState:IsValid() then
-                    local playerName = playerState:get().PlayerNamePrivate:ToString()
-                    if playerName and playerName ~= "" then
-                        SendEventToBridge("player_disconnect", playerName, "{}")
-                        logger:log(2, string.format("Player disconnected: %s", playerName))
-                    end
-                end
-            end)
-
-            if not success then
-                logger:log(1, "Error in player disconnect hook callback: " .. tostring(err))
-            end
-        end)
-    end)
-
-    if hookSuccess then
-        logger:log(2, string.format("Registered disconnect hook: %s", hookName))
-        disconnectHookRegistered = true
-        break
-    end
+    return players
 end
 
-if not disconnectHookRegistered then
-    logger:log(1, "Warning: Could not register any player disconnect hooks")
+-- Function to check for player changes
+local function CheckPlayerChanges()
+    local currentPlayers = GetOnlinePlayers()
+
+    -- Check for new players (joined)
+    for playerName, _ in pairs(currentPlayers) do
+        if not knownPlayers[playerName] then
+            SendEventToBridge("player_connect", playerName, "{}")
+            logger:log(2, string.format("Player joined: %s", playerName))
+        end
+    end
+
+    -- Check for disconnected players (left)
+    for playerName, _ in pairs(knownPlayers) do
+        if not currentPlayers[playerName] then
+            SendEventToBridge("player_disconnect", playerName, "{}")
+            logger:log(2, string.format("Player left: %s", playerName))
+        end
+    end
+
+    -- Update known players list
+    knownPlayers = currentPlayers
+end
+
+-- Start player monitoring loop
+ExecuteWithDelay(5000, function()
+    -- Initial player list
+    knownPlayers = GetOnlinePlayers()
+    logger:log(2, "Player monitoring started - initial player count: " .. tostring(#knownPlayers))
+
+    -- Set up recurring check
+    LoopAsync(playerCheckInterval, function()
+        CheckPlayerChanges()
+        return false  -- Continue looping
+    end)
+end)
+
+logger:log(2, "Player join/leave monitoring initialized")
+
+-- Hook player state creation (player connect)
+local connectHookSuccess = pcall(function()
+    RegisterHook("/Script/Pal.PalPlayerState:ReceiveBeginPlay", function(playerState)
+        local success, err = pcall(function()
+            if playerState and playerState:IsValid() then
+                -- Small delay to ensure PlayerNamePrivate is set
+                ExecuteWithDelay(1000, function()
+                    local nameSuccess, playerName = pcall(function()
+                        return playerState:get().PlayerNamePrivate:ToString()
+                    end)
+
+                    if nameSuccess and playerName and playerName ~= "" then
+                        SendEventToBridge("player_connect", playerName, "{}")
+                        logger:log(2, string.format("Player connected (BeginPlay): %s", playerName))
+                    end
+                end)
+            end
+        end)
+
+        if not success then
+            logger:log(1, "Error in player connect hook callback: " .. tostring(err))
+        end
+    end)
+end)
+
+if connectHookSuccess then
+    logger:log(2, "Registered player connect hook (BeginPlay)")
+else
+    logger:log(1, "Warning: Could not register player connect hook")
+end
+
+-- Hook player state destruction (player disconnect)
+local disconnectHookSuccess = pcall(function()
+    RegisterHook("/Script/Pal.PalPlayerState:ReceiveEndPlay", function(playerState, reason)
+        local success, err = pcall(function()
+            if playerState and playerState:IsValid() then
+                local nameSuccess, playerName = pcall(function()
+                    return playerState:get().PlayerNamePrivate:ToString()
+                end)
+
+                if nameSuccess and playerName and playerName ~= "" then
+                    SendEventToBridge("player_disconnect", playerName, "{}")
+                    logger:log(2, string.format("Player disconnected (EndPlay): %s", playerName))
+                end
+            end
+        end)
+
+        if not success then
+            logger:log(1, "Error in player disconnect hook callback: " .. tostring(err))
+        end
+    end)
+end)
+
+if disconnectHookSuccess then
+    logger:log(2, "Registered player disconnect hook (EndPlay)")
+else
+    logger:log(1, "Warning: Could not register player disconnect hook")
 end
 
 -- Hook player death events

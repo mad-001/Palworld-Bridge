@@ -132,6 +132,7 @@ const playerInventories = new Map<string, PlayerInventory>();
 
 // Track online players to detect connect/disconnect
 let lastKnownPlayers = new Set<string>();
+let hasInitializedPlayerList = false; // Track if we've done first poll
 const playerCache = new Map<string, { gameId: string; name: string; steamId: string }>();
 
 // Metrics
@@ -510,6 +511,21 @@ async function handleTakaroRequest(message: any) {
         responsePayload = await handleGetPlayerInventory(args);
         break;
 
+      case 'listItems':
+        // Palworld API doesn't provide item list, return empty array
+        responsePayload = [];
+        break;
+
+      case 'listEntities':
+        // Palworld API doesn't provide entity list, return empty array
+        responsePayload = [];
+        break;
+
+      case 'listLocations':
+        // Palworld API doesn't provide location list, return empty array
+        responsePayload = [];
+        break;
+
       default:
         logger.warn(`Unknown action: ${action}`);
         responsePayload = { error: `Unknown action: ${action}` };
@@ -561,7 +577,7 @@ function startServerMonitoring() {
 /**
  * Get current players from Palworld server
  */
-async function handleGetPlayers() {
+async function handleGetPlayers(detectChanges: boolean = false) {
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
 
@@ -590,35 +606,41 @@ async function handleGetPlayers() {
       positionZ: player.location_z !== undefined ? player.location_z : (player.z !== undefined ? player.z : undefined)
     }));
 
-    // Detect player connect/disconnect by comparing with last known players
-    if (isConnectedToTakaro) {
+    // Always cache player data
+    for (const player of mappedPlayers) {
+      playerCache.set(player.gameId, { gameId: player.gameId, name: player.name, steamId: player.steamId });
+    }
+
+    // Only detect connect/disconnect during polling interval (not on Takaro's frequent getPlayers requests)
+    if (detectChanges && isConnectedToTakaro) {
       const currentPlayers = new Set<string>(mappedPlayers.map((p: any) => p.gameId));
 
-      // Detect new players (connected)
-      for (const player of mappedPlayers) {
-        // Cache player data
-        playerCache.set(player.gameId, { gameId: player.gameId, name: player.name, steamId: player.steamId });
+      logger.debug(`[POLL] Current: ${currentPlayers.size} players, Last known: ${lastKnownPlayers.size} players`);
 
-        if (lastKnownPlayers.size > 0 && !lastKnownPlayers.has(player.gameId)) {
-          logger.info(`Detected player connect: ${player.name} (${player.gameId})`);
-          await sendPlayerEvent('player-connected', player.name);
+      // Only detect changes after first poll to avoid false positives on startup
+      if (hasInitializedPlayerList) {
+        // Detect new players (connected)
+        for (const player of mappedPlayers) {
+          if (!lastKnownPlayers.has(player.gameId)) {
+            logger.info(`[CONNECT DETECTED] Player joined: ${player.name} (gameId: ${player.gameId})`);
+            await sendPlayerEvent('player-connected', player.name);
+          }
         }
-      }
 
-      // Detect missing players (disconnected)
-      if (lastKnownPlayers.size > 0) {
+        // Detect disconnected players
         for (const lastPlayerId of lastKnownPlayers) {
           if (!currentPlayers.has(lastPlayerId)) {
-            // Get player name from cache
             const cachedPlayer = playerCache.get(lastPlayerId);
             const playerName = cachedPlayer ? cachedPlayer.name : lastPlayerId;
-            logger.info(`Detected player disconnect: ${playerName} (${lastPlayerId})`);
+            logger.info(`[DISCONNECT DETECTED] Player left: ${playerName} (gameId: ${lastPlayerId})`);
             await sendPlayerEvent('player-disconnected', playerName);
           }
         }
+      } else {
+        logger.debug(`[POLL] First poll - initializing player list with ${currentPlayers.size} players`);
+        hasInitializedPlayerList = true;
       }
 
-      // Update last known players
       lastKnownPlayers = currentPlayers;
     }
 
@@ -725,7 +747,7 @@ async function handleGetPlayerLocation(args: any) {
     const player = players.find((p: any) => p.gameId === playerId || p.steamId === playerId);
 
     if (!player) {
-      logger.warn(`Player ${playerId} not found for location lookup`);
+      logger.debug(`Player ${playerId} not found for location lookup (likely offline)`);
       return { x: 0, y: 0, z: 0 };
     }
 
@@ -1209,10 +1231,15 @@ app.listen(HTTP_PORT, () => {
 // Connect to Takaro
 connectToTakaro();
 
-// Poll for player changes every 10 seconds
+// Poll for player changes every 10 seconds (Palworld shows join/leave in console, not accessible via UE4SS)
+let pollCount = 0;
 setInterval(async () => {
+  pollCount++;
   if (isConnectedToTakaro) {
-    await handleGetPlayers();
+    logger.debug(`[POLL #${pollCount}] Checking for player changes...`);
+    await handleGetPlayers(true); // Pass true to enable change detection
+  } else {
+    logger.debug(`[POLL #${pollCount}] Skipping - not connected to Takaro`);
   }
 }, 10000);
 
