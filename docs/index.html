@@ -276,23 +276,23 @@
             <li><span class="emoji">📚</span> <strong>Documentation</strong> - Comprehensive UE4SS installation guide with troubleshooting</li>
         </ul>
 
-        <h2>Features</h2>
+        <h2>Core Services</h2>
         <div class="feature-grid">
             <div class="feature-card">
-                <h3><span class="emoji">🎮</span> Full API Support</h3>
-                <p>All 11 Palworld v1 API endpoints including players, info, metrics, settings, and server control</p>
+                <h3><span class="emoji">🌉</span> Bridge Service</h3>
+                <p>Connects Palworld REST API to Takaro platform via WebSocket with full v1 API support (11 endpoints)</p>
             </div>
             <div class="feature-card">
-                <h3><span class="emoji">💬</span> Console Commands</h3>
-                <p>Run commands directly from Takaro's web console to manage players and server</p>
+                <h3><span class="emoji">🎮</span> Console Commands</h3>
+                <p>Run commands directly from Takaro's web console - kick, ban, announce, shutdown, and more</p>
             </div>
             <div class="feature-card">
-                <h3><span class="emoji">📍</span> Location Tracking</h3>
-                <p>Real-time player position tracking with X, Y coordinates</p>
+                <h3><span class="emoji">📍</span> Player Tracking</h3>
+                <p>Real-time player position tracking with automatic connect/disconnect event detection</p>
             </div>
             <div class="feature-card">
-                <h3><span class="emoji">⚡</span> Real-time Events</h3>
-                <p>WebSocket connection for instant player events and server status updates</p>
+                <h3><span class="emoji">💬</span> Chat Integration</h3>
+                <p>Optional UE4SS mod for bi-directional chat between game, Takaro, and Discord</p>
             </div>
         </div>
 
@@ -356,6 +356,118 @@ PALWORLD_PASSWORD=YourAdminPassword</code></pre>
 # Or with PM2 for production:
 pm2 start dist/index.js --name palworld-bridge</code></pre>
             </div>
+        </div>
+
+        <h2>Chat Integration (Optional)</h2>
+        <p>The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Takaro and Discord.</p>
+
+        <div class="info-box">
+            <strong><span class="emoji">💡</span> Prerequisites:</strong><br>
+            You need <strong>UE4SS</strong> (Unreal Engine 4 Scripting System) to run the mod. Download from
+            <a href="https://github.com/UE4SS-RE/RE-UE4SS/releases" target="_blank">UE4SS Releases</a>.
+            Version 3.0.0 or higher recommended.
+        </div>
+
+        <h3>Installation Steps</h3>
+
+        <div class="step-container">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <h3>Install UE4SS</h3>
+                <ul>
+                    <li>Download the latest <code>UE4SS_v3.x.x.zip</code> release</li>
+                    <li>Extract and copy these files to <code>PalServer\Pal\Binaries\Win64\</code>:
+                        <ul>
+                            <li><code>dwmapi.dll</code></li>
+                            <li><code>UE4SS.dll</code></li>
+                            <li><code>UE4SS-settings.ini</code></li>
+                            <li>The entire <code>Mods</code> folder</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="step-container">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <h3>Install TakaroChat Mod</h3>
+                <p>Copy the <code>TakaroChat</code> folder from the bridge repository to:</p>
+                <pre><code>PalServer\Pal\Binaries\Win64\Mods\TakaroChat\</code></pre>
+                <p>Your directory structure should look like:</p>
+                <pre><code>PalServer\Pal\Binaries\Win64\
+├── dwmapi.dll
+├── UE4SS.dll
+├── UE4SS-settings.ini
+└── Mods\
+    └── TakaroChat\
+        ├── enabled.txt
+        └── Scripts\
+            ├── main.lua
+            └── config.lua</code></pre>
+            </div>
+        </div>
+
+        <div class="step-container">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <h3>Configure TakaroChat</h3>
+                <p>Edit <code>TakaroChat/Scripts/config.lua</code>:</p>
+                <pre><code>-- Bridge Connection
+config.BridgeHost = "127.0.0.1"  -- Bridge IP
+config.BridgePort = 3000          -- Bridge port
+
+-- Chat Settings
+config.EnableChatForwarding = true
+config.CaptureCategories = {1, 2, 3}  -- Say, Guild, Global</code></pre>
+            </div>
+        </div>
+
+        <div class="step-container">
+            <div class="step-number">4</div>
+            <div class="step-content">
+                <h3>Restart Palworld Server</h3>
+                <p>Stop and start your Palworld server to load UE4SS and the mod.</p>
+            </div>
+        </div>
+
+        <h3>Chat Features</h3>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3><span class="emoji">💬</span> Game to Discord</h3>
+                <p>In-game chat messages automatically forward to Takaro and Discord channels</p>
+            </div>
+            <div class="feature-card">
+                <h3><span class="emoji">🔄</span> Discord to Game</h3>
+                <p>Discord messages relay back to the game via announce command</p>
+            </div>
+            <div class="feature-card">
+                <h3><span class="emoji">👥</span> Player Events</h3>
+                <p>Connect and disconnect events automatically detected and forwarded</p>
+            </div>
+            <div class="feature-card">
+                <h3><span class="emoji">🎯</span> Multi-Channel Support</h3>
+                <p>Captures Say, Guild, and Global chat channels</p>
+            </div>
+        </div>
+
+        <h3>Troubleshooting Chat Integration</h3>
+        <div class="warning-box">
+            <strong>UE4SS not loading?</strong>
+            <ul>
+                <li>Ensure <code>dwmapi.dll</code> is in the correct directory</li>
+                <li>Check Windows didn't block the DLL (right-click → Properties → Unblock)</li>
+                <li>Verify UE4SS version compatibility (3.0.0+)</li>
+            </ul>
+        </div>
+
+        <div class="warning-box">
+            <strong>Chat not appearing in Discord?</strong>
+            <ul>
+                <li>Check bridge logs for connection from UE4SS mod</li>
+                <li>Verify <code>config.BridgePort</code> matches bridge's HTTP server port (default 3000)</li>
+                <li>Ensure chat forwarding module is installed in Takaro</li>
+            </ul>
         </div>
 
         <h2>Console Commands</h2>
