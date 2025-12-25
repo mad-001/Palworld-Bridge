@@ -647,15 +647,15 @@ local function ProcessTeleports()
     end
 end
 
--- Check for teleport chat commands (e.g., "/tp @playername")
+-- Check for teleport chat commands (e.g., "/visit playername")
 RegisterHook("/Script/Pal.PalPlayerState:EnterChat_Receive", function(playerState, chatData)
     local success, err = pcall(function()
         local message = chatData:get().Message:ToString()
         local playerName = playerState:get().PlayerNamePrivate:ToString()
 
-        -- Check for teleport request command: /tp @targetPlayer
-        if message:match("^/tp%s+@") then
-            local targetPlayer = message:match("^/tp%s+@(.+)")
+        -- Check for teleport request command: /visit targetPlayer
+        if message:match("^/visit%s+") then
+            local targetPlayer = message:match("^/visit%s+(.+)")
             if targetPlayer then
                 -- Send teleport request to bridge
                 local json = string.format(
