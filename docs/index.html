@@ -20,7 +20,7 @@
         }
 
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             background: rgba(30, 30, 40, 0.95);
             padding: 40px;
@@ -30,7 +30,7 @@
 
         h1 {
             font-size: 2.5em;
-            margin-bottom: 10px;
+            margin-bottom: 20px;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
             background: linear-gradient(135deg, #a78bfa 0%, #c4b5fd 100%);
             -webkit-background-clip: text;
@@ -40,15 +40,17 @@
 
         h2 {
             font-size: 1.8em;
-            margin-top: 30px;
+            margin-top: 40px;
             margin-bottom: 15px;
             color: #a78bfa;
             text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+            border-bottom: 2px solid rgba(167, 139, 250, 0.3);
+            padding-bottom: 10px;
         }
 
         h3 {
             font-size: 1.3em;
-            margin-top: 20px;
+            margin-top: 25px;
             margin-bottom: 10px;
             color: #c4b5fd;
         }
@@ -56,15 +58,6 @@
         p {
             margin-bottom: 15px;
             line-height: 1.8;
-        }
-
-        .version-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-weight: bold;
-            margin-bottom: 20px;
         }
 
         .download-btn {
@@ -75,7 +68,7 @@
             border-radius: 8px;
             text-decoration: none;
             font-weight: bold;
-            margin: 15px 0;
+            margin: 20px 0;
             transition: all 0.3s ease;
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
@@ -99,32 +92,6 @@
             padding: 15px;
             margin: 20px 0;
             border-radius: 5px;
-        }
-
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }
-
-        .feature-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(167, 139, 250, 0.2);
-            padding: 20px;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-        }
-
-        .feature-card:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(167, 139, 250, 0.4);
-            transform: translateY(-2px);
-        }
-
-        .feature-card h3 {
-            margin-top: 0;
-            font-size: 1.2em;
         }
 
         code {
@@ -151,78 +118,13 @@
             color: #e0e0e0;
         }
 
-        ul {
+        ul, ol {
             margin: 15px 0 15px 30px;
         }
 
         li {
             margin-bottom: 10px;
             line-height: 1.6;
-        }
-
-        .step-container {
-            display: flex;
-            align-items: flex-start;
-            margin: 20px 0;
-        }
-
-        .step-number {
-            min-width: 30px;
-            height: 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            margin-right: 15px;
-            flex-shrink: 0;
-        }
-
-        .step-content {
-            flex: 1;
-        }
-
-        .command-list {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
-        }
-
-        .command-item {
-            padding: 10px;
-            margin: 5px 0;
-            background: rgba(255, 255, 255, 0.03);
-            border-left: 3px solid #a78bfa;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-        }
-
-        .command-item strong {
-            color: #fbbf24;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid rgba(167, 139, 250, 0.2);
-        }
-
-        th {
-            background: rgba(167, 139, 250, 0.1);
-            color: #a78bfa;
-            font-weight: bold;
-        }
-
-        tr:hover {
-            background: rgba(255, 255, 255, 0.03);
         }
 
         a {
@@ -236,107 +138,61 @@
             text-decoration: underline;
         }
 
-        .footer {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 1px solid rgba(167, 139, 250, 0.2);
-            color: #9ca3af;
-        }
-
-        .emoji {
-            font-size: 1.2em;
+        .note {
+            background: rgba(251, 191, 36, 0.1);
+            border-left: 4px solid #fbbf24;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1><span class="emoji">🦖</span> Palworld-Takaro Bridge</h1>
-        <p style="font-size: 1.2em; margin-bottom: 30px;">Connect your Palworld dedicated server to Takaro</p>
+        <h1>Palworld-Takaro Bridge</h1>
+        <p style="font-size: 1.2em; margin-bottom: 30px;">Connect your Palworld dedicated server to Takaro for Discord integration, player management, and server control.</p>
 
-        <div class="info-box">
-            <strong>What is Takaro?</strong><br>
-            Takaro is a comprehensive game server management platform. Access is invite-only through <a href="https://takaro.io">takaro.io</a> or their <a href="https://discord.gg/takaro">Discord server</a>.
-        </div>
+        <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" class="download-btn">Download Latest Release</a>
 
-        <h2>Download</h2>
-        <span class="version-badge">Version 1.1.0</span>
-        <br>
-        <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" class="download-btn">
-            <span class="emoji">⬇️</span> Download Latest Release
-        </a>
-
-        <h3>What's New in 1.1.0</h3>
+        <h2>What You Get</h2>
         <ul>
-            <li><span class="emoji">💬</span> <strong>Chat Integration</strong> - TakaroChat UE4SS mod for real-time chat forwarding to Discord</li>
-            <li><span class="emoji">🔄</span> <strong>Bi-directional Chat</strong> - Discord messages relay back to game via announce command</li>
-            <li><span class="emoji">👥</span> <strong>Player Events</strong> - Automatic player connect/disconnect detection with 10-second polling</li>
-            <li><span class="emoji">🎯</span> <strong>Event System</strong> - Fixed event structure to match Takaro's gameEvent format</li>
-            <li><span class="emoji">⚡</span> <strong>Performance</strong> - Cached player data to prevent API interference during gameplay</li>
-            <li><span class="emoji">📚</span> <strong>Documentation</strong> - Comprehensive UE4SS installation guide with troubleshooting</li>
+            <li><strong>Bridge Service</strong> - Connects Palworld REST API to Takaro platform</li>
+            <li><strong>Player Tracking</strong> - Real-time location tracking and connect/disconnect events</li>
+            <li><strong>Console Commands</strong> - Kick, ban, announce, shutdown from Takaro web console</li>
+            <li><strong>Chat Integration</strong> - Optional UE4SS mod for game chat to Discord (bi-directional)</li>
         </ul>
 
-        <h2>Core Services</h2>
-        <div class="feature-grid">
-            <div class="feature-card">
-                <h3><span class="emoji">🌉</span> Bridge Service</h3>
-                <p>Connects Palworld REST API to Takaro platform via WebSocket with full v1 API support (11 endpoints)</p>
-            </div>
-            <div class="feature-card">
-                <h3><span class="emoji">🎮</span> Console Commands</h3>
-                <p>Run commands directly from Takaro's web console - kick, ban, announce, shutdown, and more</p>
-            </div>
-            <div class="feature-card">
-                <h3><span class="emoji">📍</span> Player Tracking</h3>
-                <p>Real-time player position tracking with automatic connect/disconnect event detection</p>
-            </div>
-            <div class="feature-card">
-                <h3><span class="emoji">💬</span> Chat Integration</h3>
-                <p>Optional UE4SS mod for bi-directional chat between game, Takaro, and Discord</p>
-            </div>
-        </div>
+        <h2>Prerequisites</h2>
+        <ul>
+            <li>Palworld dedicated server</li>
+            <li>Node.js 18 or higher</li>
+            <li>Takaro account - Get access at <a href="https://takaro.io">takaro.io</a> or their <a href="https://discord.gg/takaro">Discord</a></li>
+        </ul>
 
-        <h2>Quick Start</h2>
+        <h2>Setup: Bridge</h2>
 
-        <div class="step-container">
-            <div class="step-number">1</div>
-            <div class="step-content">
-                <h3>Prerequisites</h3>
-                <ul>
-                    <li>Palworld dedicated server with REST API enabled</li>
-                    <li>Node.js 18 or higher</li>
-                    <li>Takaro account and server registration token</li>
-                </ul>
-            </div>
-        </div>
-
-        <div class="step-container">
-            <div class="step-number">2</div>
-            <div class="step-content">
-                <h3>Enable Palworld REST API</h3>
-                <p>Edit your Palworld server's <code>PalWorldSettings.ini</code>:</p>
-                <pre><code>RESTAPIEnabled=True
+        <h3>1. Enable Palworld REST API</h3>
+        <p>Edit <code>PalWorldSettings.ini</code> in your Palworld server:</p>
+        <pre><code>RESTAPIEnabled=True
 RESTAPIPort=8212
 AdminPassword=YourSecurePassword</code></pre>
-            </div>
-        </div>
 
-        <div class="step-container">
-            <div class="step-number">3</div>
-            <div class="step-content">
-                <h3>Install Bridge</h3>
-                <pre><code>cd /path/to/Palworld-Bridge
+        <h3>2. Get Takaro Tokens</h3>
+        <ol>
+            <li>Log into <a href="https://takaro.io">takaro.io</a></li>
+            <li>Go to your game server settings</li>
+            <li>Copy your <strong>Identity Token</strong> and <strong>Registration Token</strong></li>
+        </ol>
+
+        <h3>3. Install Bridge</h3>
+        <pre><code>git clone https://github.com/mad-001/Palworld-Bridge.git
+cd Palworld-Bridge
 npm install
 npm run build</code></pre>
-            </div>
-        </div>
 
-        <div class="step-container">
-            <div class="step-number">4</div>
-            <div class="step-content">
-                <h3>Configure</h3>
-                <p>Create <code>TakaroConfig.txt</code> in the bridge directory:</p>
-                <pre><code># Takaro Connection
+        <h3>4. Configure Bridge</h3>
+        <p>Create <code>TakaroConfig.txt</code> in the bridge directory:</p>
+        <pre><code># Takaro Connection
 IDENTITY_TOKEN=YourIdentityToken
 REGISTRATION_TOKEN=YourRegistrationToken
 
@@ -345,57 +201,45 @@ PALWORLD_HOST=127.0.0.1
 PALWORLD_PORT=8212
 PALWORLD_USERNAME=admin
 PALWORLD_PASSWORD=YourAdminPassword</code></pre>
-            </div>
-        </div>
 
-        <div class="step-container">
-            <div class="step-number">5</div>
-            <div class="step-content">
-                <h3>Start Bridge</h3>
-                <pre><code>npm start
-# Or with PM2 for production:
+        <h3>5. Start Bridge</h3>
+        <pre><code>npm start
+# Or with PM2:
 pm2 start dist/index.js --name palworld-bridge</code></pre>
-            </div>
-        </div>
-
-        <h2>Chat Integration (Optional)</h2>
-        <p>The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Takaro and Discord.</p>
 
         <div class="info-box">
-            <strong><span class="emoji">💡</span> Prerequisites:</strong><br>
-            You need <strong>UE4SS</strong> (Unreal Engine 4 Scripting System) to run the mod. Download from
-            <a href="https://github.com/UE4SS-RE/RE-UE4SS/releases" target="_blank">UE4SS Releases</a>.
-            Version 3.0.0 or higher recommended.
+            <strong>That's it!</strong> Your bridge should now connect to Takaro. Check the logs to confirm connection.
         </div>
 
-        <h3>Installation Steps</h3>
+        <h2>Setup: Chat Integration (Optional)</h2>
+        <p>Enables game chat to forward to Discord and Discord messages to relay back to the game.</p>
 
-        <div class="step-container">
-            <div class="step-number">1</div>
-            <div class="step-content">
-                <h3>Install UE4SS</h3>
+        <h3>Prerequisites</h3>
+        <ul>
+            <li>Bridge must be running (see above)</li>
+            <li>Download <a href="https://github.com/UE4SS-RE/RE-UE4SS/releases">UE4SS v3.0.0+</a></li>
+        </ul>
+
+        <h3>1. Install UE4SS</h3>
+        <ol>
+            <li>Download latest <code>UE4SS_v3.x.x.zip</code></li>
+            <li>Extract and copy to <code>PalServer\Pal\Binaries\Win64\</code>:
                 <ul>
-                    <li>Download the latest <code>UE4SS_v3.x.x.zip</code> release</li>
-                    <li>Extract and copy these files to <code>PalServer\Pal\Binaries\Win64\</code>:
-                        <ul>
-                            <li><code>dwmapi.dll</code></li>
-                            <li><code>UE4SS.dll</code></li>
-                            <li><code>UE4SS-settings.ini</code></li>
-                            <li>The entire <code>Mods</code> folder</li>
-                        </ul>
-                    </li>
+                    <li><code>dwmapi.dll</code></li>
+                    <li><code>UE4SS.dll</code></li>
+                    <li><code>UE4SS-settings.ini</code></li>
+                    <li><code>Mods\</code> folder</li>
                 </ul>
-            </div>
-        </div>
+            </li>
+            <li>If Windows blocks the DLL: Right-click <code>dwmapi.dll</code> → Properties → Unblock</li>
+        </ol>
 
-        <div class="step-container">
-            <div class="step-number">2</div>
-            <div class="step-content">
-                <h3>Install TakaroChat Mod</h3>
-                <p>Copy the <code>TakaroChat</code> folder from the bridge repository to:</p>
-                <pre><code>PalServer\Pal\Binaries\Win64\Mods\TakaroChat\</code></pre>
-                <p>Your directory structure should look like:</p>
-                <pre><code>PalServer\Pal\Binaries\Win64\
+        <h3>2. Install TakaroChat Mod</h3>
+        <p>Copy <code>TakaroChat</code> folder from bridge repository to:</p>
+        <pre><code>PalServer\Pal\Binaries\Win64\Mods\TakaroChat\</code></pre>
+
+        <p>Final structure:</p>
+        <pre><code>PalServer\Pal\Binaries\Win64\
 ├── dwmapi.dll
 ├── UE4SS.dll
 ├── UE4SS-settings.ini
@@ -405,145 +249,101 @@ pm2 start dist/index.js --name palworld-bridge</code></pre>
         └── Scripts\
             ├── main.lua
             └── config.lua</code></pre>
-            </div>
-        </div>
 
-        <div class="step-container">
-            <div class="step-number">3</div>
-            <div class="step-content">
-                <h3>Configure TakaroChat</h3>
-                <p>Edit <code>TakaroChat/Scripts/config.lua</code>:</p>
-                <pre><code>-- Bridge Connection
-config.BridgeHost = "127.0.0.1"  -- Bridge IP
-config.BridgePort = 3000          -- Bridge port
+        <h3>3. Configure TakaroChat</h3>
+        <p>Edit <code>TakaroChat/Scripts/config.lua</code>:</p>
+        <pre><code>-- Bridge Connection
+config.BridgeHost = "127.0.0.1"  -- IP where bridge runs
+config.BridgePort = 3000          -- Bridge HTTP port (default 3000)
 
 -- Chat Settings
 config.EnableChatForwarding = true
-config.CaptureCategories = {1, 2, 3}  -- Say, Guild, Global</code></pre>
-            </div>
+config.CaptureCategories = {1, 2, 3}  -- 1=Say, 2=Guild, 3=Global</code></pre>
+
+        <h3>4. Restart Palworld Server</h3>
+        <p>Stop and start your server. UE4SS and TakaroChat will load automatically.</p>
+
+        <div class="info-box">
+            <strong>Chat working?</strong> Test by sending a message in-game. It should appear in your Discord channel via Takaro.
         </div>
 
-        <div class="step-container">
-            <div class="step-number">4</div>
-            <div class="step-content">
-                <h3>Restart Palworld Server</h3>
-                <p>Stop and start your Palworld server to load UE4SS and the mod.</p>
-            </div>
-        </div>
-
-        <h3>Chat Features</h3>
-        <div class="feature-grid">
-            <div class="feature-card">
-                <h3><span class="emoji">💬</span> Game to Discord</h3>
-                <p>In-game chat messages automatically forward to Takaro and Discord channels</p>
-            </div>
-            <div class="feature-card">
-                <h3><span class="emoji">🔄</span> Discord to Game</h3>
-                <p>Discord messages relay back to the game via announce command</p>
-            </div>
-            <div class="feature-card">
-                <h3><span class="emoji">👥</span> Player Events</h3>
-                <p>Connect and disconnect events automatically detected and forwarded</p>
-            </div>
-            <div class="feature-card">
-                <h3><span class="emoji">🎯</span> Multi-Channel Support</h3>
-                <p>Captures Say, Guild, and Global chat channels</p>
-            </div>
-        </div>
-
-        <h3>Troubleshooting Chat Integration</h3>
-        <div class="warning-box">
-            <strong>UE4SS not loading?</strong>
-            <ul>
-                <li>Ensure <code>dwmapi.dll</code> is in the correct directory</li>
-                <li>Check Windows didn't block the DLL (right-click → Properties → Unblock)</li>
-                <li>Verify UE4SS version compatibility (3.0.0+)</li>
-            </ul>
-        </div>
-
-        <div class="warning-box">
-            <strong>Chat not appearing in Discord?</strong>
-            <ul>
-                <li>Check bridge logs for connection from UE4SS mod</li>
-                <li>Verify <code>config.BridgePort</code> matches bridge's HTTP server port (default 3000)</li>
-                <li>Ensure chat forwarding module is installed in Takaro</li>
-            </ul>
-        </div>
-
-        <h2>Console Commands</h2>
-        <p>Use these commands in the Takaro web console:</p>
-
-        <div class="command-list">
-            <div class="command-item"><strong>help</strong> - Show all available commands</div>
-            <div class="command-item"><strong>players</strong> - List all online players with details</div>
-            <div class="command-item"><strong>serverinfo</strong> - Get server information</div>
-            <div class="command-item"><strong>metrics</strong> - Get server metrics</div>
-            <div class="command-item"><strong>settings</strong> - Get server settings</div>
-            <div class="command-item"><strong>announce &lt;message&gt;</strong> - Send announcement to all players</div>
-            <div class="command-item"><strong>save</strong> - Save the world</div>
-            <div class="command-item"><strong>shutdown [seconds] [message]</strong> - Shutdown server with countdown</div>
-            <div class="command-item"><strong>stop</strong> - Stop server immediately</div>
-            <div class="command-item"><strong>ban &lt;player_name&gt;</strong> - Ban a player by name</div>
-            <div class="command-item"><strong>kick &lt;player_name&gt;</strong> - Kick a player by name</div>
-            <div class="command-item"><strong>unban &lt;steam_id&gt;</strong> - Unban a player by Steam ID</div>
-        </div>
-
-        <h2>Supported API Endpoints</h2>
-
-        <h3>GET Endpoints</h3>
+        <h2>Available Commands</h2>
+        <p>Use these in the Takaro web console (not in-game):</p>
         <ul>
-            <li><code>/v1/api/info</code> - Server information</li>
-            <li><code>/v1/api/players</code> - Player list with locations</li>
-            <li><code>/v1/api/settings</code> - Server settings</li>
-            <li><code>/v1/api/metrics</code> - Server metrics</li>
-        </ul>
-
-        <h3>POST Endpoints</h3>
-        <ul>
-            <li><code>/v1/api/announce</code> - Send announcements</li>
-            <li><code>/v1/api/save</code> - Save world</li>
-            <li><code>/v1/api/shutdown</code> - Graceful shutdown</li>
-            <li><code>/v1/api/stop</code> - Immediate stop</li>
-            <li><code>/v1/api/kick</code> - Kick player</li>
-            <li><code>/v1/api/ban</code> - Ban player</li>
-            <li><code>/v1/api/unban</code> - Unban player</li>
+            <li><code>help</code> - List all commands</li>
+            <li><code>players</code> - Show online players</li>
+            <li><code>serverinfo</code> - Server details</li>
+            <li><code>metrics</code> - Server metrics</li>
+            <li><code>settings</code> - Server settings</li>
+            <li><code>announce &lt;message&gt;</code> - Send announcement</li>
+            <li><code>save</code> - Save world</li>
+            <li><code>shutdown [seconds] [message]</code> - Shutdown with countdown</li>
+            <li><code>stop</code> - Stop immediately</li>
+            <li><code>kick &lt;player_name&gt;</code> - Kick player</li>
+            <li><code>ban &lt;player_name&gt;</code> - Ban player</li>
+            <li><code>unban &lt;steam_id&gt;</code> - Unban player</li>
         </ul>
 
         <h2>Troubleshooting</h2>
 
-        <h3>Bridge won't connect to Takaro</h3>
-        <ul>
-            <li>Verify IDENTITY_TOKEN and REGISTRATION_TOKEN are correct</li>
-            <li>Check bridge logs for connection errors</li>
-            <li>Ensure internet connectivity</li>
-        </ul>
+        <h3>Bridge Issues</h3>
+        <div class="warning-box">
+            <strong>Bridge won't connect to Takaro:</strong>
+            <ul>
+                <li>Check IDENTITY_TOKEN and REGISTRATION_TOKEN are correct</li>
+                <li>Check bridge logs for errors: <code>tail -f palworld-bridge.log</code> or <code>pm2 logs palworld-bridge</code></li>
+                <li>Verify internet connectivity</li>
+            </ul>
+        </div>
 
-        <h3>Can't connect to Palworld server</h3>
-        <ul>
-            <li>Confirm REST API is enabled in PalWorldSettings.ini</li>
-            <li>Verify AdminPassword matches between config and server</li>
-            <li>Check server is running and port 8212 is accessible</li>
-        </ul>
+        <div class="warning-box">
+            <strong>Can't connect to Palworld server:</strong>
+            <ul>
+                <li>Verify REST API is enabled in PalWorldSettings.ini</li>
+                <li>Check AdminPassword matches between config and server</li>
+                <li>Ensure port 8212 is accessible</li>
+                <li>Confirm server is running</li>
+            </ul>
+        </div>
 
-        <h3>Commands not working</h3>
-        <ul>
-            <li>Ensure bridge is connected (check logs)</li>
-            <li>Verify you're typing commands in Takaro console, not in-game</li>
-            <li>Check command syntax with <code>help</code> command</li>
-        </ul>
+        <h3>Chat Integration Issues</h3>
+        <div class="warning-box">
+            <strong>UE4SS not loading:</strong>
+            <ul>
+                <li>Ensure <code>dwmapi.dll</code> is in <code>Win64\</code> directory</li>
+                <li>Unblock DLL: Right-click → Properties → Unblock → Apply</li>
+                <li>Verify UE4SS version 3.0.0 or higher</li>
+                <li>Check <code>UE4SS.log</code> for errors</li>
+            </ul>
+        </div>
 
-        <h2>Resources</h2>
+        <div class="warning-box">
+            <strong>Chat not appearing in Discord:</strong>
+            <ul>
+                <li>Check bridge logs for incoming chat messages from mod</li>
+                <li>Verify <code>config.BridgePort</code> matches bridge HTTP port (default 3000)</li>
+                <li>Ensure Takaro has chat forwarding configured</li>
+                <li>Confirm TakaroChat mod is enabled: check <code>enabled.txt</code> exists</li>
+            </ul>
+        </div>
+
+        <h3>Command Issues</h3>
+        <div class="warning-box">
+            <strong>Commands not working:</strong>
+            <ul>
+                <li>Ensure bridge is connected (check logs)</li>
+                <li>Type commands in Takaro web console, NOT in-game chat</li>
+                <li>Verify command syntax with <code>help</code> command</li>
+            </ul>
+        </div>
+
+        <h2>Links</h2>
         <ul>
             <li><a href="https://github.com/mad-001/Palworld-Bridge">GitHub Repository</a></li>
-            <li><a href="https://github.com/mad-001/Palworld-Bridge/releases">Releases</a></li>
             <li><a href="https://takaro.io">Takaro Platform</a></li>
-            <li><a href="https://docs.takaro.io">Takaro Documentation</a></li>
+            <li><a href="https://discord.gg/takaro">Takaro Discord</a></li>
         </ul>
 
-        <div class="footer">
-            <p>Created with <span class="emoji">❤️</span> for the Palworld community</p>
-            <p style="margin-top: 10px;">© 2025 | <a href="https://github.com/mad-001">mad-001</a></p>
-        </div>
     </div>
 </body>
 </html>
