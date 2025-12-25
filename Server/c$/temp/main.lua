@@ -253,10 +253,12 @@ RegisterHook("/Script/Pal.PalPlayerState:EnterChat_Receive", function(playerStat
         logger:log(2, string.format("[%d] %s: %s", category, playerName, message))
 
         -- Check for connect messages (system messages when players join)
-        -- Palworld format: "PlayerName joined the server."
-        if message:match("joined the server") then
-            -- Extract player name from the message
-            local connectPlayerName = message:match("^(.+) joined the server")
+        -- Common patterns: "PlayerName joined the game", "has joined", etc.
+        if message:match("joined the game") or message:match("has joined") or message:match("connected") then
+            -- Extract player name from the message if it's a connect message
+            local connectPlayerName = message:match("^(.+) joined the game") or
+                                     message:match("^(.+) has joined") or
+                                     message:match("^(.+) connected")
 
             if connectPlayerName then
                 logger:log(2, string.format("Detected connect via chat: %s", connectPlayerName))
@@ -266,10 +268,12 @@ RegisterHook("/Script/Pal.PalPlayerState:EnterChat_Receive", function(playerStat
         end
 
         -- Check for disconnect messages (system messages when players leave)
-        -- Palworld format: "PlayerName left the server."
-        if message:match("left the server") then
-            -- Extract player name from the message
-            local disconnectPlayerName = message:match("^(.+) left the server")
+        -- Common patterns: "PlayerName left the game", "has left", etc.
+        if message:match("left the game") or message:match("has left") or message:match("disconnected") then
+            -- Extract player name from the message if it's a disconnect message
+            local disconnectPlayerName = message:match("^(.+) left the game") or
+                                        message:match("^(.+) has left") or
+                                        message:match("^(.+) disconnected")
 
             if disconnectPlayerName then
                 logger:log(2, string.format("Detected disconnect via chat: %s", disconnectPlayerName))
@@ -306,143 +310,70 @@ end)
 
 logger:log(2, "Chat hook registered successfully")
 
--- Player tracking for join/leave detection
-local knownPlayers = {}
-local playerCheckInterval = 5000 -- Check every 5 seconds
-
--- Function to get current online players
-local function GetOnlinePlayers()
-    local players = {}
+-- Hook player login/connect events
+RegisterHook("/Script/Engine.PlayerController:ClientRestart", function(playerController)
     local success, err = pcall(function()
-        local GameInstance = FindFirstOf("PalGameInstance")
-        if not GameInstance or not GameInstance:IsValid() then
-            return
-        end
-
-        local GameState = GameInstance:get().GameState
-        if not GameState or not GameState:IsValid() then
-            return
-        end
-
-        local PlayerArray = GameState:get().PlayerArray
-        if not PlayerArray then
-            return
-        end
-
-        for i = 1, PlayerArray:GetArrayNum() do
-            local PlayerState = PlayerArray:GetArrayElement(i)
-            if PlayerState and PlayerState:IsValid() then
-                local PlayerName = PlayerState:get().PlayerNamePrivate:ToString()
-                if PlayerName and PlayerName ~= "" then
-                    players[PlayerName] = true
-                end
+        local playerState = playerController:get().PlayerState
+        if playerState and playerState:IsValid() then
+            local playerName = playerState:get().PlayerNamePrivate:ToString()
+            if playerName and playerName ~= "" then
+                SendEventToBridge("player_connect", playerName, "{}")
+                logger:log(2, string.format("Player connected: %s", playerName))
             end
         end
     end)
 
     if not success then
-        logger:log(1, "Error getting online players: " .. tostring(err))
+        logger:log(1, "Error in player connect hook: " .. tostring(err))
     end
-
-    return players
-end
-
--- Function to check for player changes
-local function CheckPlayerChanges()
-    local currentPlayers = GetOnlinePlayers()
-
-    -- Check for new players (joined)
-    for playerName, _ in pairs(currentPlayers) do
-        if not knownPlayers[playerName] then
-            SendEventToBridge("player_connect", playerName, "{}")
-            logger:log(2, string.format("Player joined: %s", playerName))
-        end
-    end
-
-    -- Check for disconnected players (left)
-    for playerName, _ in pairs(knownPlayers) do
-        if not currentPlayers[playerName] then
-            SendEventToBridge("player_disconnect", playerName, "{}")
-            logger:log(2, string.format("Player left: %s", playerName))
-        end
-    end
-
-    -- Update known players list
-    knownPlayers = currentPlayers
-end
-
--- Start player monitoring loop
-ExecuteWithDelay(5000, function()
-    -- Initial player list
-    knownPlayers = GetOnlinePlayers()
-    logger:log(2, "Player monitoring started - initial player count: " .. tostring(#knownPlayers))
-
-    -- Set up recurring check
-    LoopAsync(playerCheckInterval, function()
-        CheckPlayerChanges()
-        return false  -- Continue looping
-    end)
 end)
 
-logger:log(2, "Player join/leave monitoring initialized")
+-- Hook player logout/disconnect events (trying multiple possible hooks)
+local disconnectHookRegistered = false
+local disconnectHooks = {
+    "/Script/Engine.GameMode:Logout",
+    "/Script/Pal.PalGameMode:Logout",
+    "/Script/Engine.PlayerController:OnDestroyed"
+}
 
--- Hook player state creation (player connect)
-local connectHookSuccess = pcall(function()
-    RegisterHook("/Script/Pal.PalPlayerState:ReceiveBeginPlay", function(playerState)
-        local success, err = pcall(function()
-            if playerState and playerState:IsValid() then
-                -- Small delay to ensure PlayerNamePrivate is set
-                ExecuteWithDelay(1000, function()
-                    local nameSuccess, playerName = pcall(function()
-                        return playerState:get().PlayerNamePrivate:ToString()
-                    end)
-
-                    if nameSuccess and playerName and playerName ~= "" then
-                        SendEventToBridge("player_connect", playerName, "{}")
-                        logger:log(2, string.format("Player connected (BeginPlay): %s", playerName))
+for _, hookName in ipairs(disconnectHooks) do
+    local hookSuccess = pcall(function()
+        RegisterHook(hookName, function(context, playerController)
+            local success, err = pcall(function()
+                local playerState
+                if playerController and playerController:IsValid() then
+                    playerState = playerController:get().PlayerState
+                elseif context and context:IsValid() then
+                    -- Try to get player state from context
+                    if context:get().PlayerState then
+                        playerState = context:get().PlayerState
                     end
-                end)
+                end
+
+                if playerState and playerState:IsValid() then
+                    local playerName = playerState:get().PlayerNamePrivate:ToString()
+                    if playerName and playerName ~= "" then
+                        SendEventToBridge("player_disconnect", playerName, "{}")
+                        logger:log(2, string.format("Player disconnected: %s", playerName))
+                    end
+                end
+            end)
+
+            if not success then
+                logger:log(1, "Error in player disconnect hook callback: " .. tostring(err))
             end
         end)
-
-        if not success then
-            logger:log(1, "Error in player connect hook callback: " .. tostring(err))
-        end
     end)
-end)
 
-if connectHookSuccess then
-    logger:log(2, "Registered player connect hook (BeginPlay)")
-else
-    logger:log(1, "Warning: Could not register player connect hook")
+    if hookSuccess then
+        logger:log(2, string.format("Registered disconnect hook: %s", hookName))
+        disconnectHookRegistered = true
+        break
+    end
 end
 
--- Hook player state destruction (player disconnect)
-local disconnectHookSuccess = pcall(function()
-    RegisterHook("/Script/Pal.PalPlayerState:ReceiveEndPlay", function(playerState, reason)
-        local success, err = pcall(function()
-            if playerState and playerState:IsValid() then
-                local nameSuccess, playerName = pcall(function()
-                    return playerState:get().PlayerNamePrivate:ToString()
-                end)
-
-                if nameSuccess and playerName and playerName ~= "" then
-                    SendEventToBridge("player_disconnect", playerName, "{}")
-                    logger:log(2, string.format("Player disconnected (EndPlay): %s", playerName))
-                end
-            end
-        end)
-
-        if not success then
-            logger:log(1, "Error in player disconnect hook callback: " .. tostring(err))
-        end
-    end)
-end)
-
-if disconnectHookSuccess then
-    logger:log(2, "Registered player disconnect hook (EndPlay)")
-else
-    logger:log(1, "Warning: Could not register player disconnect hook")
+if not disconnectHookRegistered then
+    logger:log(1, "Warning: Could not register any player disconnect hooks")
 end
 
 -- Hook player death events
@@ -584,152 +515,9 @@ if config.EnableDiscordToGame then
     logger:log(2, "Discord polling started")
 end
 
--- Teleport functionality
-local teleportQueue = {}
-
--- Add teleport request to queue
-local function QueueTeleport(playerName, x, y, z)
-    table.insert(teleportQueue, {
-        playerName = playerName,
-        x = x,
-        y = y,
-        z = z,
-        timestamp = os.time()
-    })
-    logger:log(2, string.format("Queued teleport for %s to (%.1f, %.1f, %.1f)", playerName, x, y, z))
-end
-
--- Process pending teleports
-local function ProcessTeleports()
-    if #teleportQueue == 0 then
-        return
-    end
-
-    local success, err = pcall(function()
-        local players = FindAllOf("PalPlayerCharacter")
-        if not players then
-            return
-        end
-
-        for _, player in ipairs(players) do
-            if player and player:IsValid() then
-                local playerState = player:get().PlayerState
-                if playerState and playerState:IsValid() then
-                    local playerName = playerState:get().PlayerNamePrivate:ToString()
-
-                    -- Check if this player has pending teleport
-                    for i = #teleportQueue, 1, -1 do
-                        local teleport = teleportQueue[i]
-                        if teleport.playerName == playerName then
-                            -- Create FVector for new location
-                            local NewLocation = {
-                                X = teleport.x,
-                                Y = teleport.y,
-                                Z = teleport.z
-                            }
-
-                            -- Teleport player using K2_SetActorLocation
-                            player:K2_SetActorLocation(NewLocation, false, true)
-
-                            logger:log(2, string.format("Teleported %s to (%.1f, %.1f, %.1f)", playerName, teleport.x, teleport.y, teleport.z))
-
-                            -- Remove from queue
-                            table.remove(teleportQueue, i)
-                        end
-                    end
-                end
-            end
-        end
-    end)
-
-    if not success then
-        logger:log(1, "Error processing teleports: " .. tostring(err))
-    end
-end
-
--- Check for teleport chat commands (e.g., "/tp @playername")
-RegisterHook("/Script/Pal.PalPlayerState:EnterChat_Receive", function(playerState, chatData)
-    local success, err = pcall(function()
-        local message = chatData:get().Message:ToString()
-        local playerName = playerState:get().PlayerNamePrivate:ToString()
-
-        -- Check for teleport request command: /tp @targetPlayer
-        if message:match("^/tp%s+@") then
-            local targetPlayer = message:match("^/tp%s+@(.+)")
-            if targetPlayer then
-                -- Send teleport request to bridge
-                local json = string.format(
-                    '{"type":"teleport_request","playerName":"%s","targetPlayer":"%s","timestamp":"%s"}',
-                    EscapeJSON(playerName),
-                    EscapeJSON(targetPlayer),
-                    os.date("!%Y-%m-%dT%H:%M:%SZ")
-                )
-
-                local command = string.format(
-                    'curl -s -X POST -H "Content-Type: application/json" -d "%s" %s',
-                    json:gsub('"', '\\"'),
-                    config.BridgeURL
-                )
-
-                os.execute(command .. " >nul 2>&1 &")
-                logger:log(2, string.format("%s requested teleport to %s", playerName, targetPlayer))
-            end
-        end
-    end)
-
-    if not success then
-        logger:log(1, "Error in teleport chat hook: " .. tostring(err))
-    end
-end)
-
--- Fetch pending teleports from bridge
-local function FetchTeleportQueue()
-    if not config.EnableBridge then
-        return
-    end
-
-    local success, err = pcall(function()
-        local bridgeHost = config.BridgeURL:match("http://([^/]+)")
-        if not bridgeHost then
-            return
-        end
-
-        local command = string.format('curl -s http://%s/teleport-queue', bridgeHost)
-        local handle = io.popen(command)
-        if not handle then
-            logger:log(1, "Failed to fetch teleport queue")
-            return
-        end
-
-        local result = handle:read("*a")
-        handle:close()
-
-        if result and result ~= "" then
-            -- Parse JSON response (simple parsing for teleports array)
-            for playerName, x, y, z in result:gmatch('"playerName":"([^"]+)"[^}]-"x":([%d%.%-]+),"y":([%d%.%-]+),"z":([%d%.%-]+)') do
-                QueueTeleport(playerName, tonumber(x), tonumber(y), tonumber(z))
-            end
-        end
-    end)
-
-    if not success then
-        logger:log(1, "Error fetching teleport queue: " .. tostring(err))
-    end
-end
-
--- Poll bridge for teleports and process them every second
-LoopAsync(1000, function()
-    FetchTeleportQueue()
-    ProcessTeleports()
-    return false
-end)
-
-logger:log(2, "Teleport system initialized")
-
 print("Status:")
 print("  Bridge: " .. (config.EnableBridge and "Enabled" or "Disabled"))
 print("  Discord Webhook: " .. (config.EnableDiscordWebhook and "Enabled" or "Disabled"))
 print("  Discord->Game: " .. (config.EnableDiscordToGame and "Enabled" or "Disabled"))
 print("  Logging: " .. (config.EnableLogging and "Enabled" or "Disabled"))
-print("  Teleport: Enabled")
 print("==========================")

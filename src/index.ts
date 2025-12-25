@@ -10,7 +10,7 @@ import { promisify } from 'util';
 const execPromise = promisify(exec);
 
 // Version
-const VERSION = '1.0.1';
+const VERSION = '1.2.0';
 
 // Load configuration from TakaroConfig.txt
 function loadConfig() {
@@ -135,6 +135,16 @@ let lastKnownPlayers = new Set<string>();
 let hasInitializedPlayerList = false; // Track if we've done first poll
 const playerCache = new Map<string, { gameId: string; name: string; steamId: string }>();
 
+// Teleport queue for pending teleports
+interface TeleportRequest {
+  playerName: string;
+  x: number;
+  y: number;
+  z: number;
+  timestamp: string;
+}
+const teleportQueue: TeleportRequest[] = [];
+
 // Metrics
 const metrics = {
   requestsReceived: 0,
@@ -204,6 +214,31 @@ app.post('/chat', async (req, res) => {
         });
         break;
 
+      case 'teleport_request':
+        // Handle in-game teleport request (player typed /tp @target)
+        const { targetPlayer } = req.body;
+        logger.info(`[TELEPORT] ${playerName} requested teleport to ${targetPlayer}`);
+
+        // Get target player's location
+        const players = await handleGetPlayers();
+        const target = players.find((p: any) =>
+          p.name.toLowerCase() === targetPlayer.toLowerCase()
+        );
+
+        if (target && target.positionX !== undefined) {
+          teleportQueue.push({
+            playerName: playerName,
+            x: target.positionX,
+            y: target.positionY,
+            z: target.positionZ,
+            timestamp: new Date().toISOString()
+          });
+          logger.info(`[TELEPORT] Queued ${playerName} -> ${targetPlayer} at (${target.positionX}, ${target.positionY}, ${target.positionZ})`);
+        } else {
+          logger.warn(`[TELEPORT] Target player ${targetPlayer} not found or has no location`);
+        }
+        break;
+
       default:
         logger.warn(`Unknown event type: ${type}`);
     }
@@ -211,6 +246,21 @@ app.post('/chat', async (req, res) => {
     res.status(200).json({ success: true });
   } catch (error: any) {
     logger.error(`Event endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Teleport queue endpoint - UE4SS mod polls this for pending teleports
+ */
+app.get('/teleport-queue', (req, res) => {
+  try {
+    // Return all pending teleports and clear the queue
+    const pending = [...teleportQueue];
+    teleportQueue.length = 0; // Clear queue
+    res.status(200).json({ teleports: pending });
+  } catch (error: any) {
+    logger.error(`Teleport queue endpoint error: ${error.message}`);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -511,6 +561,10 @@ async function handleTakaroRequest(message: any) {
         responsePayload = await handleGetPlayerInventory(args);
         break;
 
+      case 'teleportPlayer':
+        responsePayload = await handleTeleportPlayer(args);
+        break;
+
       case 'listItems':
         // Palworld API doesn't provide item list, return empty array
         responsePayload = [];
@@ -800,6 +854,63 @@ async function handleGetPlayerInventory(args: any) {
 }
 
 /**
+ * Teleport a player to another player's location
+ */
+async function handleTeleportPlayer(args: any) {
+  const teleportArgs = typeof args === 'string' ? JSON.parse(args) : args;
+  const sourcePlayer = teleportArgs.sourcePlayer || teleportArgs.playerId;
+  const targetPlayer = teleportArgs.targetPlayer || teleportArgs.destinationPlayer;
+
+  if (!sourcePlayer || !targetPlayer) {
+    return { success: false, error: 'Both sourcePlayer and targetPlayer are required' };
+  }
+
+  try {
+    // Get all online players
+    const players = await handleGetPlayers();
+
+    // Find source and target players
+    const source = players.find((p: any) =>
+      p.name.toLowerCase() === sourcePlayer.toLowerCase() ||
+      p.gameId === sourcePlayer
+    );
+    const target = players.find((p: any) =>
+      p.name.toLowerCase() === targetPlayer.toLowerCase() ||
+      p.gameId === targetPlayer
+    );
+
+    if (!source) {
+      return { success: false, error: `Source player "${sourcePlayer}" not found online` };
+    }
+    if (!target) {
+      return { success: false, error: `Target player "${targetPlayer}" not found online` };
+    }
+    if (target.positionX === undefined) {
+      return { success: false, error: `Target player "${target.name}" has no location data` };
+    }
+
+    // Add to teleport queue
+    teleportQueue.push({
+      playerName: source.name,
+      x: target.positionX,
+      y: target.positionY,
+      z: target.positionZ,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`[TELEPORT] Queued ${source.name} -> ${target.name} at (${target.positionX}, ${target.positionY}, ${target.positionZ})`);
+
+    return {
+      success: true,
+      message: `Teleporting ${source.name} to ${target.name}`
+    };
+  } catch (error: any) {
+    logger.error(`Failed to teleport player: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Execute command on Palworld server or console command
  */
 async function handleExecuteCommand(args: any) {
@@ -830,7 +941,8 @@ async function handleExecuteCommand(args: any) {
   stop - Stop server immediately
   ban <player> - Ban a player by name
   kick <player> - Kick a player by name
-  unban <steamid> - Unban a player by Steam ID`
+  unban <steamid> - Unban a player by Steam ID
+  teleportplayer <source> <target> - Teleport source player to target player`
       };
 
     case 'players':
@@ -1009,6 +1121,24 @@ async function handleExecuteCommand(args: any) {
         const result = await handleUnbanPlayer({ gameId: userId });
         return result.success
           ? { success: true, rawResult: `Unbanned user: ${userId}` }
+          : { success: false, rawResult: result.error };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'teleportplayer':
+      if (cmdArguments.length < 2) {
+        return { success: false, rawResult: 'Usage: teleportplayer <source_player> <target_player>' };
+      }
+      try {
+        const sourcePlayer = cmdArguments[0];
+        const targetPlayer = cmdArguments[1];
+        const result = await handleTeleportPlayer({
+          sourcePlayer,
+          targetPlayer
+        });
+        return result.success
+          ? { success: true, rawResult: result.message || 'Teleport queued' }
           : { success: false, rawResult: result.error };
       } catch (error: any) {
         return { success: false, rawResult: `Error: ${error.message}` };
