@@ -647,41 +647,6 @@ local function ProcessTeleports()
     end
 end
 
--- Check for teleport chat commands (e.g., "!visit playername")
-RegisterHook("/Script/Pal.PalPlayerState:EnterChat_Receive", function(playerState, chatData)
-    local success, err = pcall(function()
-        local message = chatData:get().Message:ToString()
-        local playerName = playerState:get().PlayerNamePrivate:ToString()
-
-        -- Check for teleport request command: !visit targetPlayer
-        if message:match("^!visit%s+") then
-            local targetPlayer = message:match("^!visit%s+(.+)")
-            if targetPlayer then
-                -- Send teleport request to bridge
-                local json = string.format(
-                    '{"type":"teleport_request","playerName":"%s","targetPlayer":"%s","timestamp":"%s"}',
-                    EscapeJSON(playerName),
-                    EscapeJSON(targetPlayer),
-                    os.date("!%Y-%m-%dT%H:%M:%SZ")
-                )
-
-                local command = string.format(
-                    'curl -s -X POST -H "Content-Type: application/json" -d "%s" %s',
-                    json:gsub('"', '\\"'),
-                    config.BridgeURL
-                )
-
-                os.execute(command .. " >nul 2>&1 &")
-                logger:log(2, string.format("%s requested teleport to %s", playerName, targetPlayer))
-            end
-        end
-    end)
-
-    if not success then
-        logger:log(1, "Error in teleport chat hook: " .. tostring(err))
-    end
-end)
-
 -- Fetch pending teleports from bridge
 local function FetchTeleportQueue()
     if not config.EnableBridge then

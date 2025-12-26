@@ -137,10 +137,8 @@ const playerCache = new Map<string, { gameId: string; name: string; steamId: str
 
 // Teleport queue for pending teleports
 interface TeleportRequest {
-  playerName: string;
-  x: number;
-  y: number;
-  z: number;
+  sourcePlayer: string;
+  targetPlayer: string;
   timestamp: string;
 }
 const teleportQueue: TeleportRequest[] = [];
@@ -226,31 +224,6 @@ app.post('/chat', async (req, res) => {
           inventory: inventory || [],
           timestamp: timestamp || new Date().toISOString()
         });
-        break;
-
-      case 'teleport_request':
-        // Handle in-game teleport request (player typed /tp @target)
-        const { targetPlayer } = req.body;
-        logger.info(`[TELEPORT] ${playerName} requested teleport to ${targetPlayer}`);
-
-        // Get target player's location
-        const players = await handleGetPlayers();
-        const target = players.find((p: any) =>
-          p.name.toLowerCase() === targetPlayer.toLowerCase()
-        );
-
-        if (target && target.positionX !== undefined) {
-          teleportQueue.push({
-            playerName: playerName,
-            x: target.positionX,
-            y: target.positionY,
-            z: target.positionZ,
-            timestamp: new Date().toISOString()
-          });
-          logger.info(`[TELEPORT] Queued ${playerName} -> ${targetPlayer} at (${target.positionX}, ${target.positionY}, ${target.positionZ})`);
-        } else {
-          logger.warn(`[TELEPORT] Target player ${targetPlayer} not found or has no location`);
-        }
         break;
 
       default:
@@ -702,7 +675,7 @@ async function handleGetPlayers(detectChanges: boolean = false) {
         for (const player of mappedPlayers) {
           if (!lastKnownPlayers.has(player.gameId)) {
             logger.info(`[CONNECT DETECTED] Player joined: ${player.name} (gameId: ${player.gameId})`);
-            await sendPlayerEvent('player-connected', player.name);
+            await sendPlayerEvent('player-connected', player.name, new Date().toISOString(), player.gameId);
           }
         }
 
@@ -712,7 +685,7 @@ async function handleGetPlayers(detectChanges: boolean = false) {
             const cachedPlayer = playerCache.get(lastPlayerId);
             const playerName = cachedPlayer ? cachedPlayer.name : lastPlayerId;
             logger.info(`[DISCONNECT DETECTED] Player left: ${playerName} (gameId: ${lastPlayerId})`);
-            await sendPlayerEvent('player-disconnected', playerName);
+            await sendPlayerEvent('player-disconnected', playerName, new Date().toISOString(), lastPlayerId);
           }
         }
       } else {
@@ -910,20 +883,15 @@ async function handleTeleportPlayer(args: any) {
     if (!target) {
       return { success: false, error: `Target player "${targetPlayer}" not found online` };
     }
-    if (target.positionX === undefined) {
-      return { success: false, error: `Target player "${target.name}" has no location data` };
-    }
 
-    // Add to teleport queue
+    // Add to teleport queue - UE4SS mod will look up actual positions in-game
     teleportQueue.push({
-      playerName: source.name,
-      x: target.positionX,
-      y: target.positionY,
-      z: target.positionZ,
+      sourcePlayer: source.name,
+      targetPlayer: target.name,
       timestamp: new Date().toISOString()
     });
 
-    logger.info(`[TELEPORT] Queued ${source.name} -> ${target.name} at (${target.positionX}, ${target.positionY}, ${target.positionZ})`);
+    logger.info(`[TELEPORT] Queued ${source.name} -> ${target.name}`);
 
     return {
       success: true,
