@@ -82,7 +82,7 @@ local function SendToBridge(playerName, message, category)
         config.BridgeURL
     )
 
-    os.execute(command .. " >nul 2>&1 &")
+    os.execute('start /B "" ' .. command .. ' >nul 2>&1')
     logger:log(3, string.format("Sent to bridge: %s: %s", playerName, message))
 end
 
@@ -106,7 +106,7 @@ local function SendEventToBridge(eventType, playerName, data)
         config.BridgeURL
     )
 
-    os.execute(command .. " >nul 2>&1 &")
+    os.execute('start /B "" ' .. command .. ' >nul 2>&1')
     logger:log(2, string.format("Event %s: %s", eventType, playerName))
 end
 
@@ -133,7 +133,7 @@ local function SendToDiscord(playerName, message, category)
         config.DiscordWebhookURL
     )
 
-    os.execute(command .. " >nul 2>&1 &")
+    os.execute('start /B "" ' .. command .. ' >nul 2>&1')
     logger:log(3, string.format("Sent to Discord: %s: %s", playerName, message))
 end
 
@@ -475,6 +475,7 @@ end
 
 logger:log(2, "Player event hooks registration complete")
 
+--[[ INVENTORY TRACKING DISABLED - causes crashes
 -- Send inventory data to bridge
 local function SendInventoryToBridge(playerName, inventoryData)
     if not config.EnableBridge then
@@ -494,7 +495,7 @@ local function SendInventoryToBridge(playerName, inventoryData)
         config.BridgeURL
     )
 
-    os.execute(command .. " >nul 2>&1 &")
+    os.execute('start /B "" ' .. command .. ' >nul 2>&1')
     logger:log(3, string.format("Sent inventory for: %s", playerName))
 end
 
@@ -568,6 +569,7 @@ if config.EnableInventoryTracking then
 
     logger:log(2, string.format("Inventory tracking started (every %ds)", config.InventoryUpdateInterval))
 end
+--]]
 
 -- Start Discord polling if enabled
 if config.EnableDiscordToGame then
@@ -646,6 +648,41 @@ local function ProcessTeleports()
         logger:log(1, "Error processing teleports: " .. tostring(err))
     end
 end
+
+-- Check for teleport chat commands (e.g., "/tp @playername")
+RegisterHook("/Script/Pal.PalPlayerState:EnterChat_Receive", function(playerState, chatData)
+    local success, err = pcall(function()
+        local message = chatData:get().Message:ToString()
+        local playerName = playerState:get().PlayerNamePrivate:ToString()
+
+        -- Check for teleport request command: /tp @targetPlayer
+        if message:match("^/tp%s+@") then
+            local targetPlayer = message:match("^/tp%s+@(.+)")
+            if targetPlayer then
+                -- Send teleport request to bridge
+                local json = string.format(
+                    '{"type":"teleport_request","playerName":"%s","targetPlayer":"%s","timestamp":"%s"}',
+                    EscapeJSON(playerName),
+                    EscapeJSON(targetPlayer),
+                    os.date("!%Y-%m-%dT%H:%M:%SZ")
+                )
+
+                local command = string.format(
+                    'curl -s -X POST -H "Content-Type: application/json" -d "%s" %s',
+                    json:gsub('"', '\\"'),
+                    config.BridgeURL
+                )
+
+                os.execute('start /B "" ' .. command .. ' >nul 2>&1')
+                logger:log(2, string.format("%s requested teleport to %s", playerName, targetPlayer))
+            end
+        end
+    end)
+
+    if not success then
+        logger:log(1, "Error in teleport chat hook: " .. tostring(err))
+    end
+end)
 
 -- Fetch pending teleports from bridge
 local function FetchTeleportQueue()
