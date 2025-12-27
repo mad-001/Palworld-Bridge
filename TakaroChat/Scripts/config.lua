@@ -21,7 +21,7 @@ config.LogFile = "TakaroChat.log"
 config.LogLevel = 2 -- 1=Errors only, 2=Info, 3=Debug
 
 -- Message Filtering
-config.BlacklistedPrefixes = {"/", "!"} -- Don't send commands
+config.BlacklistedPrefixes = {"/"} -- Don't send / commands (allow ! for Takaro)
 config.MaxMessageLength = 500
 
 -- Chat Categories (Palworld chat types)

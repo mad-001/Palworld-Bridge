@@ -884,7 +884,7 @@ async function handleTeleportPlayer(args: any) {
       return { success: false, error: `Target player "${targetPlayer}" not found online` };
     }
 
-    // Add to teleport queue - UE4SS mod will look up actual positions in-game
+    // Add to teleport queue - Lua mod will look up target's position in-game
     teleportQueue.push({
       sourcePlayer: source.name,
       targetPlayer: target.name,
