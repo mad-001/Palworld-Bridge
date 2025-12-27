@@ -114,13 +114,19 @@ local function FetchTeleportQueue()
                 if PlayersList then
                     for _, TPlayer in ipairs(PlayersList) do
                         if TPlayer ~= nil and TPlayer and TPlayer:IsValid() then
-                            local targetName = TPlayer.PlayerState.PlayerNamePrivate:ToString()
-                            if targetName == targetPlayer then
-                                -- Get location using AdminEngine pattern
-                                local location = TPlayer.PawnPrivate:K2_GetActorLocation()
-                                logger:log(2, string.format("Teleporting %s to %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
-                                QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
-                                break
+                            local playerState = TPlayer.PlayerState
+                            if playerState and playerState:IsValid() then
+                                local targetName = playerState.PlayerNamePrivate:ToString()
+                                if targetName == targetPlayer then
+                                    -- Get location using AdminEngine pattern
+                                    local pawnPrivate = TPlayer.PawnPrivate
+                                    if pawnPrivate and pawnPrivate:IsValid() then
+                                        local location = pawnPrivate:K2_GetActorLocation()
+                                        logger:log(2, string.format("Teleporting %s to %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
+                                        QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
+                                        break
+                                    end
+                                end
                             end
                         end
                     end
