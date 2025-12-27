@@ -41,45 +41,39 @@ local function ProcessTeleports()
 
         for _, player in ipairs(players) do
             if player and player:IsValid() then
-                local playerState = player:get().PlayerState
-                if playerState and playerState:IsValid() then
-                    local playerName = playerState:get().PlayerNamePrivate:ToString()
+                -- Use direct property access like AdminEngine
+                local playerName = player.PlayerState.PlayerNamePrivate:ToString()
 
-                    -- Check if this player has pending teleport
-                    for i = #teleportQueue, 1, -1 do
-                        local teleport = teleportQueue[i]
-                        if teleport.playerName == playerName then
-                            -- Create FVector for new location
-                            local NewLocation = {
-                                X = teleport.x,
-                                Y = teleport.y,
-                                Z = teleport.z
-                            }
+                -- Check if this player has pending teleport
+                for i = #teleportQueue, 1, -1 do
+                    local teleport = teleportQueue[i]
+                    if teleport.playerName == playerName then
+                        -- Create FVector for new location
+                        local NewLocation = {
+                            X = teleport.x,
+                            Y = teleport.y,
+                            Z = teleport.z
+                        }
 
-                            -- Create FRotator (default rotation)
-                            local NewRotation = {
-                                Pitch = 0,
-                                Yaw = 0,
-                                Roll = 0
-                            }
+                        -- Create FRotator (default rotation)
+                        local NewRotation = {
+                            Pitch = 0,
+                            Yaw = 0,
+                            Roll = 0
+                        }
 
-                            -- Get player pawn and teleport using PalUtility (AdminEngine pattern)
-                            local pawn = player:get()
-                            if pawn and pawn:IsValid() then
-                                local palUtil = GetPalUtil()
-                                if palUtil and palUtil:IsValid() then
-                                    palUtil:Teleport(pawn, NewLocation, NewRotation, true, false)
-                                    logger:log(2, string.format("Teleported %s to (%.1f, %.1f, %.1f)", playerName, teleport.x, teleport.y, teleport.z))
-                                else
-                                    logger:log(1, "Failed to get PalUtility")
-                                end
-                            else
-                                logger:log(1, string.format("Failed to get pawn for %s", playerName))
-                            end
-
-                            -- Remove from queue
-                            table.remove(teleportQueue, i)
+                        -- Teleport using PalUtility (exact AdminEngine pattern)
+                        local palUtil = GetPalUtil()
+                        if palUtil and palUtil:IsValid() then
+                            palUtil:Teleport(player, NewLocation, NewRotation, true, false)
+                            logger:log(2, string.format("Teleported %s to (%.1f, %.1f, %.1f)", playerName, teleport.x, teleport.y, teleport.z))
+                        else
+                            logger:log(1, "Failed to get PalUtility")
                         end
+
+                        -- Remove from queue
+                        table.remove(teleportQueue, i)
+                    end
                     end
                 end
             end
