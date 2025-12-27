@@ -648,7 +648,7 @@ async function handleGetPlayers(detectChanges: boolean = false) {
     const players = response.data.players || [];
 
     const mappedPlayers = players.map((player: any) => ({
-      gameId: String(player.accountName),
+      gameId: String(player.userId),
       name: String(player.name),
       platformId: `palworld:${player.userId}`,
       steamId: String(player.userId),
