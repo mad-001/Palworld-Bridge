@@ -6,6 +6,15 @@ local logger = Utils.Logger:new()
 local Teleport = {}
 local teleportQueue = {}
 
+-- Get PalUtility for teleport function (from AdminEngine pattern)
+local PalUtilities = nil
+local function GetPalUtil()
+    if not PalUtilities or not PalUtilities:IsValid() then
+        PalUtilities = StaticFindObject("/Script/Pal.Default__PalUtility")
+    end
+    return PalUtilities
+end
+
 -- Add teleport to queue
 local function QueueTeleport(playerName, x, y, z)
     table.insert(teleportQueue, {
@@ -47,10 +56,26 @@ local function ProcessTeleports()
                                 Z = teleport.z
                             }
 
-                            -- Teleport player using K2_SetActorLocation on PawnPrivate
-                            player.PawnPrivate:K2_SetActorLocation(NewLocation, false, true)
+                            -- Create FRotator (default rotation)
+                            local NewRotation = {
+                                Pitch = 0,
+                                Yaw = 0,
+                                Roll = 0
+                            }
 
-                            logger:log(2, string.format("Teleported %s to (%.1f, %.1f, %.1f)", playerName, teleport.x, teleport.y, teleport.z))
+                            -- Get player pawn and teleport using PalUtility (AdminEngine pattern)
+                            local pawn = player:get()
+                            if pawn and pawn:IsValid() then
+                                local palUtil = GetPalUtil()
+                                if palUtil and palUtil:IsValid() then
+                                    palUtil:Teleport(pawn, NewLocation, NewRotation, true, false)
+                                    logger:log(2, string.format("Teleported %s to (%.1f, %.1f, %.1f)", playerName, teleport.x, teleport.y, teleport.z))
+                                else
+                                    logger:log(1, "Failed to get PalUtility")
+                                end
+                            else
+                                logger:log(1, string.format("Failed to get pawn for %s", playerName))
+                            end
 
                             -- Remove from queue
                             table.remove(teleportQueue, i)
