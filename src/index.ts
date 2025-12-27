@@ -653,7 +653,7 @@ async function handleGetPlayers(detectChanges: boolean = false) {
     const mappedPlayers = players.map((player: any) => ({
       gameId: String(player.accountName),
       name: String(player.name),
-      platformId: `palworld:${player.accountName}`,
+      platformId: `palworld:${player.userId}`,
       steamId: String(player.userId),
       ip: player.ip || undefined,
       ping: player.ping !== undefined ? player.ping : undefined,
