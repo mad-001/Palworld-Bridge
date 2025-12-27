@@ -428,9 +428,6 @@ function sendIdentify() {
   }
 
   logger.info('Sending identify message to Takaro');
-  logger.info(`IDENTITY_TOKEN: "${IDENTITY_TOKEN}" (length: ${IDENTITY_TOKEN.length})`);
-  logger.info(`REGISTRATION_TOKEN: "${REGISTRATION_TOKEN}" (length: ${REGISTRATION_TOKEN.length})`);
-  logger.info(`Full identify message: ${JSON.stringify(identifyMessage, null, 2)}`);
   takaroWs.send(JSON.stringify(identifyMessage));
 }
 
