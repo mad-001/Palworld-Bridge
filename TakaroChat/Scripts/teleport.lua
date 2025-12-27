@@ -74,7 +74,6 @@ local function ProcessTeleports()
                         -- Remove from queue
                         table.remove(teleportQueue, i)
                     end
-                    end
                 end
             end
         end
