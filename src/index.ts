@@ -92,7 +92,7 @@ setInterval(() => {
 }, 60000); // Check every minute
 
 // Configuration
-const TAKARO_WS_URL = 'wss://connect.takaro.io/';
+const TAKARO_WS_URL = process.env.TAKARO_WS_URL || 'wss://connect.next.takaro.dev/';
 const IDENTITY_TOKEN = process.env.IDENTITY_TOKEN || '';
 const REGISTRATION_TOKEN = process.env.REGISTRATION_TOKEN || '';
 
@@ -428,6 +428,9 @@ function sendIdentify() {
   }
 
   logger.info('Sending identify message to Takaro');
+  logger.info(`IDENTITY_TOKEN: "${IDENTITY_TOKEN}" (length: ${IDENTITY_TOKEN.length})`);
+  logger.info(`REGISTRATION_TOKEN: "${REGISTRATION_TOKEN}" (length: ${REGISTRATION_TOKEN.length})`);
+  logger.info(`Full identify message: ${JSON.stringify(identifyMessage, null, 2)}`);
   takaroWs.send(JSON.stringify(identifyMessage));
 }
 
@@ -466,7 +469,8 @@ function handleTakaroMessage(message: any) {
  */
 function handleIdentifyResponse(message: any) {
   if (message.payload?.error) {
-    logger.error(`Identification failed: ${message.payload.error}`);
+    logger.error(`Identification failed: ${JSON.stringify(message.payload.error, null, 2)}`);
+    logger.error(`Full message: ${JSON.stringify(message, null, 2)}`);
   } else {
     logger.info('Successfully identified with Takaro');
     isConnectedToTakaro = true;
@@ -647,9 +651,9 @@ async function handleGetPlayers(detectChanges: boolean = false) {
     const players = response.data.players || [];
 
     const mappedPlayers = players.map((player: any) => ({
-      gameId: String(player.userId),
+      gameId: String(player.accountName),
       name: String(player.name),
-      platformId: `palworld:${player.userId}`,
+      platformId: `palworld:${player.accountName}`,
       steamId: String(player.userId),
       ip: player.ip || undefined,
       ping: player.ping !== undefined ? player.ping : undefined,
