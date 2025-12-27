@@ -1126,7 +1126,7 @@ async function handleExecuteCommand(args: any) {
       }
       try {
         const sourcePlayer = cmdArguments[0];
-        const targetPlayer = cmdArguments[1];
+        const targetPlayer = cmdArguments.slice(1).join(' '); // Handle spaces in player names
         const result = await handleTeleportPlayer({
           sourcePlayer,
           targetPlayer
