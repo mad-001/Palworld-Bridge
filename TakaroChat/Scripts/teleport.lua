@@ -47,8 +47,8 @@ local function ProcessTeleports()
                                 Z = teleport.z
                             }
 
-                            -- Teleport player using K2_SetActorLocation
-                            player:K2_SetActorLocation(NewLocation, false, true)
+                            -- Teleport player using K2_SetActorLocation on PawnPrivate
+                            player.PawnPrivate:K2_SetActorLocation(NewLocation, false, true)
 
                             logger:log(2, string.format("Teleported %s to (%.1f, %.1f, %.1f)", playerName, teleport.x, teleport.y, teleport.z))
 
@@ -89,9 +89,24 @@ local function FetchTeleportQueue()
         handle:close()
 
         if result and result ~= "" then
-            -- Parse JSON response (simple parsing for teleports array)
-            for playerName, x, y, z in result:gmatch('"playerName":"([^"]+)"[^}]-"x":([%d%.%-]+),"y":([%d%.%-]+),"z":([%d%.%-]+)') do
-                QueueTeleport(playerName, tonumber(x), tonumber(y), tonumber(z))
+            -- Parse JSON response for sourcePlayer and targetPlayer
+            for sourcePlayer, targetPlayer in result:gmatch('"sourcePlayer":"([^"]+)"[^}]-"targetPlayer":"([^"]+)"') do
+                -- Find target player using AdminEngine pattern
+                local PlayersList = FindAllOf("PalPlayerCharacter")
+                if PlayersList then
+                    for _, TPlayer in ipairs(PlayersList) do
+                        if TPlayer ~= nil and TPlayer and TPlayer:IsValid() then
+                            local targetName = TPlayer.PlayerState.PlayerNamePrivate:ToString()
+                            if targetName == targetPlayer then
+                                -- Get location using AdminEngine pattern
+                                local location = TPlayer.PawnPrivate:K2_GetActorLocation()
+                                logger:log(2, string.format("Teleporting %s to %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
+                                QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
+                                break
+                            end
+                        end
+                    end
+                end
             end
         end
     end)
@@ -104,41 +119,6 @@ end
 -- Initialize teleport system
 function Teleport.Initialize()
     logger:log(2, "Initializing teleport system...")
-
-    -- Check for teleport chat commands
-    RegisterHook("/Script/Pal.PalPlayerState:EnterChat_Receive", function(playerState, chatData)
-        local success, err = pcall(function()
-            local message = chatData:get().Message:ToString()
-            local playerName = playerState:get().PlayerNamePrivate:ToString()
-
-            -- Check for teleport request command: /tp @targetPlayer
-            if message:match("^/tp%s+@") then
-                local targetPlayer = message:match("^/tp%s+@(.+)")
-                if targetPlayer then
-                    -- Send teleport request to bridge
-                    local json = string.format(
-                        '{"type":"teleport_request","playerName":"%s","targetPlayer":"%s","timestamp":"%s"}',
-                        Utils.EscapeJSON(playerName),
-                        Utils.EscapeJSON(targetPlayer),
-                        os.date("!%Y-%m-%dT%H:%M:%SZ")
-                    )
-
-                    local command = string.format(
-                        'curl -s -X POST -H "Content-Type: application/json" -d "%s" %s',
-                        json:gsub('"', '\\"'),
-                        config.BridgeURL
-                    )
-
-                    os.execute('start /B "" ' .. command .. ' >nul 2>&1')
-                    logger:log(2, string.format("%s requested teleport to %s", playerName, targetPlayer))
-                end
-            end
-        end)
-
-        if not success then
-            logger:log(1, "Error in teleport chat hook: " .. tostring(err))
-        end
-    end)
 
     -- Poll bridge for teleports and process them every second
     LoopAsync(1000, function()
