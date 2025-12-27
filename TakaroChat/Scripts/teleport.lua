@@ -86,6 +86,8 @@ end
 
 -- Fetch pending teleports from bridge
 local function FetchTeleportQueue()
+    logger:log(2, "[TELEPORT] Polling queue...")
+
     if not config.EnableBridge then
         return
     end
