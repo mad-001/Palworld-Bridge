@@ -40,12 +40,12 @@ local function GetOnlinePlayers()
             return
         end
 
-        local GameState = GameInstance:get().GameState
+        local GameState = GameInstance.GameState
         if not GameState or not GameState:IsValid() then
             return
         end
 
-        local PlayerArray = GameState:get().PlayerArray
+        local PlayerArray = GameState.PlayerArray
         if not PlayerArray then
             return
         end
@@ -53,7 +53,7 @@ local function GetOnlinePlayers()
         for i = 1, PlayerArray:GetArrayNum() do
             local PlayerState = PlayerArray:GetArrayElement(i)
             if PlayerState and PlayerState:IsValid() then
-                local PlayerName = PlayerState:get().PlayerNamePrivate:ToString()
+                local PlayerName = PlayerState.PlayerNamePrivate:ToString()
                 if PlayerName and PlayerName ~= "" then
                     players[PlayerName] = true
                 end
@@ -116,7 +116,7 @@ function Events.Initialize()
                 if playerState and playerState:IsValid() then
                     ExecuteWithDelay(1000, function()
                         if playerState:IsValid() then
-                            local playerName = playerState:get().PlayerNamePrivate:ToString()
+                            local playerName = playerState.PlayerNamePrivate:ToString()
                             if playerName and playerName ~= "" then
                                 SendEventToBridge("player_connect", playerName, "{}")
                                 logger:log(2, string.format("Player connected: %s", playerName))
@@ -143,7 +143,7 @@ function Events.Initialize()
         RegisterHook("/Script/Pal.PalPlayerState:ReceiveEndPlay", function(playerState, reason)
             local success, err = pcall(function()
                 if playerState and playerState:IsValid() then
-                    local playerName = playerState:get().PlayerNamePrivate:ToString()
+                    local playerName = playerState.PlayerNamePrivate:ToString()
                     if playerName and playerName ~= "" then
                         SendEventToBridge("player_disconnect", playerName, "{}")
                         logger:log(2, string.format("Player disconnected: %s", playerName))
@@ -168,9 +168,9 @@ function Events.Initialize()
         RegisterHook("/Script/Pal.PalPlayerCharacter:OnDeath", function(character)
             local success, err = pcall(function()
                 if character and character:IsValid() then
-                    local playerState = character:get().PlayerState
+                    local playerState = character.PlayerState
                     if playerState and playerState:IsValid() then
-                        local playerName = playerState:get().PlayerNamePrivate:ToString()
+                        local playerName = playerState.PlayerNamePrivate:ToString()
                         if playerName and playerName ~= "" then
                             SendEventToBridge("player_death", playerName, "{}")
                             logger:log(2, string.format("Player died: %s", playerName))
