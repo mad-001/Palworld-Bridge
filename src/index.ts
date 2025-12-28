@@ -827,6 +827,9 @@ async function handleGetServerMetrics() {
   }
 }
 
+// Track active location requests to prevent duplicates
+const activeLocationRequests = new Set<string>();
+
 /**
  * Get player location by player ID
  */
@@ -840,6 +843,12 @@ async function handleGetPlayerLocation(args: any) {
       return { x: 0, y: 0, z: 0 };
     }
 
+    // Check if request already in progress for this player
+    if (activeLocationRequests.has(playerId)) {
+      logger.debug(`[LOCATION] Request already in progress for ${playerId}, skipping duplicate`);
+      return { x: 0, y: 0, z: 0 };
+    }
+
     // Get player's actual name from cache (Lua needs display name, not Steam ID)
     const cachedPlayer = playerCache.get(playerId);
     if (!cachedPlayer) {
@@ -848,6 +857,9 @@ async function handleGetPlayerLocation(args: any) {
     }
 
     const playerName = cachedPlayer.name;
+
+    // Mark request as active
+    activeLocationRequests.add(playerId);
 
     // Generate unique request ID
     const requestId = `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -874,6 +886,9 @@ async function handleGetPlayerLocation(args: any) {
 
         logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
 
+        // Remove from active requests
+        activeLocationRequests.delete(playerId);
+
         return {
           x: response.x,
           y: response.y,
@@ -884,10 +899,17 @@ async function handleGetPlayerLocation(args: any) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
+    // Remove from active requests on timeout
+    activeLocationRequests.delete(playerId);
     logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
     return { x: 0, y: 0, z: 0 };
 
   } catch (error: any) {
+    // Remove from active requests on error
+    if (args && (args.gameId || args.playerId || args.userId)) {
+      const playerId = args.gameId || args.playerId || args.userId;
+      activeLocationRequests.delete(playerId);
+    }
     logger.error(`Failed to get player location: ${error.message}`);
     return { x: 0, y: 0, z: 0 };
   }
