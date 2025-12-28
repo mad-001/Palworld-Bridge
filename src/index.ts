@@ -834,7 +834,6 @@ const activeLocationRequests = new Set<string>();
  * Get player location by player ID
  */
 async function handleGetPlayerLocation(args: any) {
-
   try {
     const locationArgs = typeof args === 'string' ? JSON.parse(args) : args;
     const playerId = locationArgs.gameId || locationArgs.playerId || locationArgs.userId;
@@ -844,78 +843,22 @@ async function handleGetPlayerLocation(args: any) {
       return { x: 0, y: 0, z: 0 };
     }
 
-    // Check if request already in progress for this player
-    if (activeLocationRequests.has(playerId)) {
-      logger.debug(`[LOCATION] Request already in progress for ${playerId}, skipping duplicate`);
+    // Get all players to find the requested player
+    const players = await handleGetPlayers();
+    const player = players.find((p: any) => p.gameId === playerId || p.steamId === playerId);
+
+    if (!player) {
+      logger.debug(`Player ${playerId} not found for location lookup (likely offline)`);
       return { x: 0, y: 0, z: 0 };
     }
 
-    // Get player's actual name from cache (Lua needs display name, not Steam ID)
-    const cachedPlayer = playerCache.get(playerId);
-    if (!cachedPlayer) {
-      logger.warn(`[LOCATION] Player ${playerId} not in cache`);
-      return { x: 0, y: 0, z: 0 };
-    }
-
-    const playerName = cachedPlayer.name;
-
-    // Mark request as active
-    activeLocationRequests.add(playerId);
-
-    // Generate unique request ID
-    const requestId = `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Queue location request for Lua to process (using display name)
-    locationRequestQueue.push({
-      playerName: playerName,
-      requestId,
-      timestamp: new Date().toISOString()
-    });
-
-    logger.info(`[LOCATION] Queued request ${requestId} for ${playerName} (${playerId})`);
-
-    // Wait for response from Lua (with timeout)
-    const timeout = 5000;
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeout) {
-      const responseIndex = locationResponseQueue.findIndex(r => r.requestId === requestId);
-
-      if (responseIndex !== -1) {
-        const response = locationResponseQueue[responseIndex];
-        locationResponseQueue.splice(responseIndex, 1);
-
-        logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
-
-        // Remove from active requests
-        activeLocationRequests.delete(playerId);
-
-        return {
-          x: response.x,
-          y: response.y,
-          z: response.z
-        };
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    // Remove from active requests AND delete from queue on timeout
-    activeLocationRequests.delete(playerId);
-    const queueIndex = locationRequestQueue.findIndex(r => r.requestId === requestId);
-    if (queueIndex !== -1) {
-      locationRequestQueue.splice(queueIndex, 1);
-      logger.info(`[LOCATION] Removed timed out request ${requestId} from queue`);
-    }
-    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
-    return { x: 0, y: 0, z: 0 };
-
+    // Return location in Takaro's expected format
+    return {
+      x: player.positionX !== undefined ? player.positionX : 0,
+      y: player.positionY !== undefined ? player.positionY : 0,
+      z: player.positionZ !== undefined ? player.positionZ : 0
+    };
   } catch (error: any) {
-    // Remove from active requests on error
-    if (args && (args.gameId || args.playerId || args.userId)) {
-      const playerId = args.gameId || args.playerId || args.userId;
-      activeLocationRequests.delete(playerId);
-    }
     logger.error(`Failed to get player location: ${error.message}`);
     return { x: 0, y: 0, z: 0 };
   }
