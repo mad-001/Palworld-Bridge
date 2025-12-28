@@ -1,7 +1,7 @@
--- Takaro Chat Bridge for Palworld v1.3.0
+-- Takaro Chat Bridge for Palworld v1.3.1-discovery
 -- Modular bidirectional chat integration between Palworld, Takaro, and Discord
 
-print("=== Takaro Chat Bridge v1.3.0 ===")
+print("=== Takaro Chat Bridge v1.3.1-discovery ===")
 
 -- Load configuration
 local config = require("config")
@@ -31,6 +31,10 @@ Discord.Initialize()
 local Teleport = require("teleport")
 Teleport.Initialize()
 
+-- Data Discovery (comprehensive logging of all available Palworld data)
+local DataDiscovery = require("data_discovery")
+DataDiscovery.Initialize()
+
 -- Inventory tracking (DISABLED - causes crashes)
 -- Uncomment the lines below to enable (also set config.EnableInventoryTracking = true)
 -- local Inventory = require("inventory")
@@ -45,8 +49,9 @@ print("  Discord Webhook: " .. (config.EnableDiscordWebhook and "Enabled" or "Di
 print("  Discord->Game: " .. (config.EnableDiscordToGame and "Enabled" or "Disabled"))
 print("  Logging: " .. (config.EnableLogging and "Enabled" or "Disabled"))
 print("  Teleport: Enabled")
+print("  Data Discovery: Enabled (logs every 60s)")
 print("  Inventory: Disabled (known issues)")
 print("==========================")
 print("")
 
-logger:log(2, "TakaroChat v1.3.0 initialized successfully")
+logger:log(2, "TakaroChat v1.3.1-discovery initialized successfully")
