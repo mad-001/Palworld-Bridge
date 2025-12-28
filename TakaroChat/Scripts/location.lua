@@ -41,7 +41,19 @@ local function FetchLocationRequests()
                 if not PlayersList then
                     logger:log(1, "[LOCATION] ERROR: FindAllOf returned nil")
                 else
-                    -- Find the player silently
+                    -- Log all available player names for debugging
+                    logger:log(2, string.format("[LOCATION] Looking for '%s'. Available players:", playerName))
+                    for _, Player in ipairs(PlayersList) do
+                        if Player ~= nil and Player and Player:IsValid() then
+                            local playerState = Player.PlayerState
+                            if playerState and playerState:IsValid() then
+                                local availableName = playerState.PlayerNamePrivate:ToString()
+                                logger:log(2, string.format("[LOCATION]   - '%s'", availableName))
+                            end
+                        end
+                    end
+
+                    -- Find the player
                     local playerFound = false
                     for _, Player in ipairs(PlayersList) do
                         if Player ~= nil and Player and Player:IsValid() then
