@@ -21,10 +21,13 @@ local function SendEventToBridge(eventType, playerName, data)
         data or "{}"
     )
 
+    -- Escape single quotes for PowerShell
+    local jsonEscaped = json:gsub("'", "''")
+
     local command = string.format(
-        'curl -s -X POST -H "Content-Type: application/json" -d "%s" %s',
-        json:gsub('"', '\\"'),
-        config.BridgeURL
+        "powershell -NoProfile -Command \"Invoke-RestMethod -Method Post -Uri '%s' -Body '%s' -ContentType 'application/json'\"",
+        config.BridgeURL,
+        jsonEscaped
     )
 
     os.execute('start /B "" ' .. command .. ' >nul 2>&1')

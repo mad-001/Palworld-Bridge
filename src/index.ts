@@ -827,10 +827,20 @@ async function handleGetServerMetrics() {
   }
 }
 
+// Track consecutive location failures to stop retrying
+let locationFailureCount = 0;
+const MAX_LOCATION_FAILURES = 1;
+
 /**
  * Get player location by player ID
  */
 async function handleGetPlayerLocation(args: any) {
+  // Stop trying if we've had too many consecutive failures
+  if (locationFailureCount >= MAX_LOCATION_FAILURES) {
+    logger.debug(`[LOCATION] Skipping request - too many failures (${locationFailureCount})`);
+    return { x: 0, y: 0, z: 0 };
+  }
+
   try {
     const locationArgs = typeof args === 'string' ? JSON.parse(args) : args;
     const playerId = locationArgs.gameId || locationArgs.playerId || locationArgs.userId;
@@ -874,6 +884,9 @@ async function handleGetPlayerLocation(args: any) {
 
         logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
 
+        // Reset failure counter on success
+        locationFailureCount = 0;
+
         return {
           x: response.x,
           y: response.y,
@@ -884,10 +897,12 @@ async function handleGetPlayerLocation(args: any) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
+    locationFailureCount++;
+    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId} (failures: ${locationFailureCount}/${MAX_LOCATION_FAILURES})`);
     return { x: 0, y: 0, z: 0 };
 
   } catch (error: any) {
+    locationFailureCount++;
     logger.error(`Failed to get player location: ${error.message}`);
     return { x: 0, y: 0, z: 0 };
   }
