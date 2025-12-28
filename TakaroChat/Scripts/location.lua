@@ -57,7 +57,7 @@ local function FetchLocationRequests()
                                     -- Get player location using K2_GetActorLocation (same as teleport)
                                     local location = Player:K2_GetActorLocation()
 
-                                    -- Send location back to bridge
+                                    -- Send location back to bridge using PowerShell
                                     local json = string.format(
                                         '{"requestId":"%s","playerName":"%s","x":%.2f,"y":%.2f,"z":%.2f,"timestamp":"%s"}',
                                         requestId,
@@ -68,25 +68,18 @@ local function FetchLocationRequests()
                                         os.date("!%Y-%m-%dT%H:%M:%SZ")
                                     )
 
-                                    -- Write JSON to temp file for curl (avoids quoting hell)
-                                    local tempFile = os.getenv("TEMP") .. "\\loc_" .. requestId .. ".json"
-                                    local file = io.open(tempFile, "w")
-                                    if file then
-                                        file:write(json)
-                                        file:close()
+                                    -- Escape single quotes for PowerShell ('' = escaped ')
+                                    local jsonEscaped = json:gsub("'", "''")
 
-                                        local postCommand = string.format(
-                                            'curl -s -X POST -H "Content-Type: application/json" -d @"%s" http://%s/location-response && del "%s"',
-                                            tempFile,
-                                            bridgeHost,
-                                            tempFile
-                                        )
+                                    -- Use PowerShell directly - double quotes for cmd, single quotes for PS
+                                    local psCommand = string.format(
+                                        "powershell -NoProfile -Command \"Invoke-RestMethod -Method Post -Uri 'http://%s/location-response' -Body '%s' -ContentType 'application/json'\"",
+                                        bridgeHost,
+                                        jsonEscaped
+                                    )
 
-                                        os.execute('start /B "" ' .. postCommand .. ' >nul 2>&1')
-                                        logger:log(2, string.format("[LOCATION] Sent response for %s: (%.1f, %.1f, %.1f)", playerName, location.X, location.Y, location.Z))
-                                    else
-                                        logger:log(1, "[LOCATION] Failed to write temp file")
-                                    end
+                                    os.execute('start /B "" ' .. psCommand .. ' >nul 2>&1')
+                                    logger:log(2, string.format("[LOCATION] Sent response for %s: (%.1f, %.1f, %.1f)", playerName, location.X, location.Y, location.Z))
                                     break
                                 end
                             end
