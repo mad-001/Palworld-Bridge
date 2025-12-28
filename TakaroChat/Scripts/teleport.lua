@@ -86,7 +86,7 @@ end
 
 -- Fetch pending teleports from bridge
 local function FetchTeleportQueue()
-    logger:log(2, "[TELEPORT] Polling queue...")
+    -- Silent polling - only log errors and actual activity
 
     if not config.EnableBridge then
         return
@@ -99,7 +99,6 @@ local function FetchTeleportQueue()
         end
 
         local url = string.format('http://%s/teleport-queue', bridgeHost)
-        logger:log(2, string.format("[TELEPORT] Polling URL: %s", url))
         local command = string.format('curl -s %s', url)
         local handle = io.popen(command)
         if not handle then
@@ -110,11 +109,8 @@ local function FetchTeleportQueue()
         local result = handle:read("*a")
         handle:close()
 
-        logger:log(2, string.format("[TELEPORT] Queue response: %s", result or "nil"))
-
-        if result and result ~= "" then
+        if result and result ~= "" and result ~= '{"teleports":[]}' then
             -- Parse JSON response for teleports
-            logger:log(2, "[TELEPORT] Parsing response for teleports...")
 
             -- First, try to match coordinate-based teleports
             for match in result:gmatch('{[^}]*"sourcePlayer"%s*:%s*"([^"]+)"[^}]*}') do
@@ -131,26 +127,22 @@ local function FetchTeleportQueue()
 
             -- Then, match player-to-player teleports
             for sourcePlayer, targetPlayer in result:gmatch('"sourcePlayer"%s*:%s*"([^"]+)"[^}]*"targetPlayer"%s*:%s*"([^"]+)"') do
-                logger:log(2, string.format("[TELEPORT] Found match: %s -> %s", sourcePlayer, targetPlayer))
                 -- Find target player using AdminEngine pattern
                 local PlayersList = FindAllOf("PalPlayerCharacter")
                 if not PlayersList then
                     logger:log(1, "[TELEPORT] ERROR: FindAllOf returned nil")
                 else
-                    logger:log(2, string.format("[TELEPORT] Found %d players online", #PlayersList))
                     local targetFound = false
                     for _, TPlayer in ipairs(PlayersList) do
                         if TPlayer ~= nil and TPlayer and TPlayer:IsValid() then
                             local playerState = TPlayer.PlayerState
                             if playerState and playerState:IsValid() then
                                 local targetName = playerState.PlayerNamePrivate:ToString()
-                                logger:log(2, string.format("[TELEPORT] Checking player: '%s' vs target: '%s'", targetName, targetPlayer))
                                 if targetName == targetPlayer then
                                     targetFound = true
-                                    logger:log(2, "[TELEPORT] Target player match found!")
                                     -- Get location directly from PalPlayerCharacter (AdminEngine line 69)
                                     local location = TPlayer:K2_GetActorLocation()
-                                    logger:log(2, string.format("Teleporting %s to %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
+                                    logger:log(2, string.format("[TELEPORT] %s -> %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
                                     QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
                                     break
                                 end

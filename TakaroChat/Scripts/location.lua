@@ -7,10 +7,9 @@ local Location = {}
 
 -- Fetch location requests from bridge
 local function FetchLocationRequests()
-    logger:log(2, "[LOCATION] Polling queue...")
+    -- Silent polling - only log errors and actual activity
 
     if not config.EnableBridge then
-        logger:log(1, "[LOCATION] Bridge disabled, skipping")
         return
     end
 
@@ -22,7 +21,6 @@ local function FetchLocationRequests()
         end
 
         local url = string.format('http://%s/location-queue', bridgeHost)
-        logger:log(2, string.format("[LOCATION] Polling URL: %s", url))
         local command = string.format('curl -s %s', url)
         local handle = io.popen(command)
         if not handle then
@@ -33,30 +31,17 @@ local function FetchLocationRequests()
         local result = handle:read("*a")
         handle:close()
 
-        logger:log(2, string.format("[LOCATION] Queue response: %s", result or "nil"))
-
-        if result and result ~= "" then
+        if result and result ~= "" and result ~= '{"requests":[]}' then
             -- Parse JSON response for location requests
             for playerName, requestId in result:gmatch('"playerName"%s*:%s*"([^"]+)"%s*,[^}]*"requestId"%s*:%s*"([^"]+)"') do
-                logger:log(2, string.format("[LOCATION] Request %s for player %s", requestId, playerName))
+                logger:log(2, string.format("[LOCATION] Processing request %s for player %s", requestId, playerName))
 
                 -- Find the player
                 local PlayersList = FindAllOf("PalPlayerCharacter")
                 if not PlayersList then
                     logger:log(1, "[LOCATION] ERROR: FindAllOf returned nil")
                 else
-                    -- Debug: Log all player names we can see
-                    logger:log(2, "[LOCATION] DEBUG: Looking for player: " .. playerName)
-                    for _, Player in ipairs(PlayersList) do
-                        if Player ~= nil and Player and Player:IsValid() then
-                            local playerState = Player.PlayerState
-                            if playerState and playerState:IsValid() then
-                                local name = playerState.PlayerNamePrivate:ToString()
-                                logger:log(2, "[LOCATION] DEBUG: Found player: " .. name)
-                            end
-                        end
-                    end
-
+                    -- Find the player silently
                     local playerFound = false
                     for _, Player in ipairs(PlayersList) do
                         if Player ~= nil and Player and Player:IsValid() then
