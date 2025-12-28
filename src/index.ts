@@ -850,7 +850,19 @@ async function handleGetPlayerLocation(args: any) {
     }
 
     // Get player's actual name from cache (Lua needs display name, not Steam ID)
-    const cachedPlayer = playerCache.get(playerId);
+    let cachedPlayer = playerCache.get(playerId);
+
+    // If not found by ID, try searching by name (case-insensitive)
+    if (!cachedPlayer) {
+      const playerIdLower = playerId.toLowerCase();
+      for (const [id, player] of playerCache.entries()) {
+        if (player.name.toLowerCase() === playerIdLower) {
+          cachedPlayer = player;
+          break;
+        }
+      }
+    }
+
     if (!cachedPlayer) {
       logger.warn(`[LOCATION] Player ${playerId} not in cache`);
       return { x: 0, y: 0, z: 0 };
