@@ -134,16 +134,11 @@ local function FetchTeleportQueue()
                                 if targetName == targetPlayer then
                                     targetFound = true
                                     logger:log(2, "[TELEPORT] Target player match found!")
-                                    -- Get location using AdminEngine pattern (PlayerState.Pawn)
-                                    local pawn = playerState.Pawn
-                                    if pawn and pawn:IsValid() then
-                                        local location = pawn:K2_GetActorLocation()
-                                        logger:log(2, string.format("Teleporting %s to %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
-                                        QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
-                                        break
-                                    else
-                                        logger:log(1, "[TELEPORT] ERROR: PlayerState.Pawn is nil or invalid")
-                                    end
+                                    -- Get location directly from PalPlayerCharacter (AdminEngine line 69)
+                                    local location = TPlayer:K2_GetActorLocation()
+                                    logger:log(2, string.format("Teleporting %s to %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
+                                    QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
+                                    break
                                 end
                             end
                         end
