@@ -1,43 +1,31 @@
 import { data, takaro } from '@takaro/helpers';
 
 /**
- * SetHome Command Module
- *
- * Sets the player's home location to their current position.
- * Uses the bridge's live location system to get accurate X/Y/Z coordinates.
+ * SetHome Command - Save your current location as home
  *
  * Usage: !sethome
+ *
+ * Uses Takaro's cached player position (updated from polling)
+ * Saves X/Y/Z coordinates to Takaro variables for later teleport
  */
 
 async function main() {
     const { gameServerId, player, pog, module } = data;
 
-    // Get current position using the bridge's location command
-    const locationCmd = await takaro.gameserver.gameServerControllerExecuteCommand(gameServerId, {
-        command: `location ${pog.gameId}`
-    });
+    // Use position from Takaro's polling (no command needed!)
+    const position = {
+        x: pog.positionX,
+        y: pog.positionY,
+        z: pog.positionZ || 0
+    };
 
-    // Extract location from response
-    const location = locationCmd.data?.data || locationCmd.data;
-
-    // Validate coordinates
-    if (!location || !location.x || (location.x === 0 && location.y === 0 && location.z === 0)) {
+    if (!position.x && !position.y) {
         await takaro.gameserver.gameServerControllerSendMessage(gameServerId, {
-            message: "Unable to get your current position. Please try again in a few seconds.",
-            opts: {
-                recipient: { gameId: pog.gameId }
-            }
+            message: "Unable to get your position. Try again in a few seconds."
         });
         return;
     }
 
-    const position = {
-        x: location.x,
-        y: location.y,
-        z: location.z
-    };
-
-    // Check if home already exists
     const existingVars = await takaro.variable.variableControllerSearch({
         filters: {
             key: ['home_location'],
@@ -48,12 +36,10 @@ async function main() {
     });
 
     if (existingVars.data.data.length > 0) {
-        // Update existing variable
         await takaro.variable.variableControllerUpdate(existingVars.data.data[0].id, {
             value: JSON.stringify(position)
         });
     } else {
-        // Create new variable
         await takaro.variable.variableControllerCreate({
             key: 'home_location',
             value: JSON.stringify(position),
@@ -64,10 +50,7 @@ async function main() {
     }
 
     await takaro.gameserver.gameServerControllerSendMessage(gameServerId, {
-        message: `Home location set at X: ${Math.round(position.x)}, Y: ${Math.round(position.y)}, Z: ${Math.round(position.z)}`,
-        opts: {
-            recipient: { gameId: pog.gameId }
-        }
+        message: `Home set at X: ${Math.round(position.x)}, Y: ${Math.round(position.y)}${position.z ? `, Z: ${Math.round(position.z)}` : ''}`
     });
 }
 
