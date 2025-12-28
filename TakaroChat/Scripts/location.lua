@@ -57,7 +57,7 @@ local function FetchLocationRequests()
                                     -- Get player location using K2_GetActorLocation (same as teleport)
                                     local location = Player:K2_GetActorLocation()
 
-                                    -- Send location back to bridge using PowerShell
+                                    -- Send location back to bridge using curl
                                     local json = string.format(
                                         '{"requestId":"%s","playerName":"%s","x":%.2f,"y":%.2f,"z":%.2f,"timestamp":"%s"}',
                                         requestId,
@@ -68,17 +68,17 @@ local function FetchLocationRequests()
                                         os.date("!%Y-%m-%dT%H:%M:%SZ")
                                     )
 
-                                    -- Escape single quotes for PowerShell ('' = escaped ')
-                                    local jsonEscaped = json:gsub("'", "''")
+                                    -- Escape double quotes for curl (need to use \" in Windows)
+                                    local jsonEscaped = json:gsub('"', '\\"')
 
-                                    -- Use PowerShell directly - double quotes for cmd, single quotes for PS
-                                    local psCommand = string.format(
-                                        "powershell -NoProfile -Command \"Invoke-RestMethod -Method Post -Uri 'http://%s/location-response' -Body '%s' -ContentType 'application/json'\"",
-                                        bridgeHost,
-                                        jsonEscaped
+                                    -- Use curl for reliable JSON POST
+                                    local curlCommand = string.format(
+                                        'curl -s -X POST -H "Content-Type: application/json" -d "%s" http://%s/location-response',
+                                        jsonEscaped,
+                                        bridgeHost
                                     )
 
-                                    os.execute('start /B "" ' .. psCommand .. ' >nul 2>&1')
+                                    os.execute('start /B "" ' .. curlCommand .. ' >nul 2>&1')
                                     logger:log(2, string.format("[LOCATION] Sent response for %s: (%.1f, %.1f, %.1f)", playerName, location.X, location.Y, location.Z))
                                     break
                                 end
