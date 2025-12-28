@@ -98,7 +98,9 @@ local function FetchTeleportQueue()
             return
         end
 
-        local command = string.format('curl -s http://%s/teleport-queue', bridgeHost)
+        local url = string.format('http://%s/teleport-queue', bridgeHost)
+        logger:log(2, string.format("[TELEPORT] Polling URL: %s", url))
+        local command = string.format('curl -s %s', url)
         local handle = io.popen(command)
         if not handle then
             logger:log(1, "Failed to fetch teleport queue")
@@ -108,9 +110,14 @@ local function FetchTeleportQueue()
         local result = handle:read("*a")
         handle:close()
 
+        logger:log(2, string.format("[TELEPORT] Queue response: %s", result or "nil"))
+
         if result and result ~= "" then
             -- Parse JSON response for sourcePlayer and targetPlayer
-            for sourcePlayer, targetPlayer in result:gmatch('"sourcePlayer":"([^"]+)"[^}]-"targetPlayer":"([^"]+)"') do
+            logger:log(2, "[TELEPORT] Parsing response for teleports...")
+            -- Use simpler pattern: match each field separately
+            for sourcePlayer, targetPlayer in result:gmatch('"sourcePlayer"%s*:%s*"([^"]+)"[^}]*"targetPlayer"%s*:%s*"([^"]+)"') do
+                logger:log(2, string.format("[TELEPORT] Found match: %s -> %s", sourcePlayer, targetPlayer))
                 -- Find target player using AdminEngine pattern
                 local PlayersList = FindAllOf("PalPlayerCharacter")
                 if PlayersList then
