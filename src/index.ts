@@ -10,7 +10,7 @@ import { promisify } from 'util';
 const execPromise = promisify(exec);
 
 // Version
-const VERSION = '1.3.2-discovery';
+const VERSION = '1.4.0';
 
 // Load configuration from TakaroConfig.txt
 function loadConfig() {
