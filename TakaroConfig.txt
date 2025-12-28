@@ -7,6 +7,11 @@
 #
 # ═══════════════════════════════════════════════════════════════
 
+# WebSocket URL for Takaro connection
+# Production: wss://connect.takaro.io/
+# Edge/Testing: wss://connect.next.takaro.dev/
+TAKARO_WS_URL=wss://connect.next.takaro.dev/
+
 # Your game server name/identity
 # Example: "My Palworld Server" or "Server-1"
 IDENTITY_TOKEN=Palworld

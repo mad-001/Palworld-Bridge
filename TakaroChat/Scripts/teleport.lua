@@ -120,24 +120,36 @@ local function FetchTeleportQueue()
                 logger:log(2, string.format("[TELEPORT] Found match: %s -> %s", sourcePlayer, targetPlayer))
                 -- Find target player using AdminEngine pattern
                 local PlayersList = FindAllOf("PalPlayerCharacter")
-                if PlayersList then
+                if not PlayersList then
+                    logger:log(1, "[TELEPORT] ERROR: FindAllOf returned nil")
+                else
+                    logger:log(2, string.format("[TELEPORT] Found %d players online", #PlayersList))
+                    local targetFound = false
                     for _, TPlayer in ipairs(PlayersList) do
                         if TPlayer ~= nil and TPlayer and TPlayer:IsValid() then
                             local playerState = TPlayer.PlayerState
                             if playerState and playerState:IsValid() then
                                 local targetName = playerState.PlayerNamePrivate:ToString()
+                                logger:log(2, string.format("[TELEPORT] Checking player: '%s' vs target: '%s'", targetName, targetPlayer))
                                 if targetName == targetPlayer then
-                                    -- Get location using AdminEngine pattern
-                                    local pawnPrivate = TPlayer.PawnPrivate
-                                    if pawnPrivate and pawnPrivate:IsValid() then
-                                        local location = pawnPrivate:K2_GetActorLocation()
+                                    targetFound = true
+                                    logger:log(2, "[TELEPORT] Target player match found!")
+                                    -- Get location using AdminEngine pattern (PlayerState.Pawn)
+                                    local pawn = playerState.Pawn
+                                    if pawn and pawn:IsValid() then
+                                        local location = pawn:K2_GetActorLocation()
                                         logger:log(2, string.format("Teleporting %s to %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
                                         QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
                                         break
+                                    else
+                                        logger:log(1, "[TELEPORT] ERROR: PlayerState.Pawn is nil or invalid")
                                     end
                                 end
                             end
                         end
+                    end
+                    if not targetFound then
+                        logger:log(1, string.format("[TELEPORT] ERROR: Target player '%s' not found online", targetPlayer))
                     end
                 end
             end
