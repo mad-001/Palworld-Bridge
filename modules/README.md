@@ -1,32 +1,10 @@
 # Palworld Bridge - Takaro Modules
 
-These modules use the Palworld Bridge's location and teleport systems to provide enhanced functionality.
+Working Takaro modules for Palworld home/teleport functionality.
 
 ## Available Modules
 
-### 1. Location Command (`location-command.js`)
-
-Get live player coordinates using the bridge's location system.
-
-**Usage:**
-```
-!location              - Get your own location
-!location <player>     - Get another player's location
-```
-
-**Features:**
-- Real-time X/Y/Z coordinates
-- Works for any online player
-- Accurate Z-coordinate (unlike Palworld API polling)
-
-**Module Configuration:**
-- **Command Name:** `location`
-- **Command Arguments:**
-  - `player` (optional, string) - Player name to look up
-
----
-
-### 2. SetHome Command (`sethome-command.js`)
+### 1. SetHome Command (`sethome-command.js`)
 
 Save your current location as your home point.
 
@@ -35,134 +13,153 @@ Save your current location as your home point.
 !sethome
 ```
 
-**Features:**
-- Uses live location system for accurate coordinates
-- Stores location in Takaro variables
+**How it works:**
+- Uses Takaro's cached player position (from polling)
+- Saves X/Y/Z coordinates to Takaro variables
 - Per-player, per-server storage
 
-**Module Configuration:**
+**Module Configuration in Takaro:**
 - **Command Name:** `sethome`
 - **No arguments required**
 
-**Pairs with:** `home` command (teleports you back to saved location)
+---
+
+### 2. Home Command (`home-command.js`)
+
+Teleport to your saved home location.
+
+**Usage:**
+```
+!home
+```
+
+**How it works:**
+- Retrieves saved coordinates from Takaro variables
+- Uses `teleportplayer` command to teleport
+- Same reliable system as `!visit` command
+
+**Module Configuration in Takaro:**
+- **Command Name:** `home`
+- **No arguments required**
 
 ---
 
-## How the Location System Works
+### 3. Location Command (`location-command.js`)
 
-1. **Module calls bridge command:**
-   ```javascript
-   const locationCmd = await takaro.gameserver.gameServerControllerExecuteCommand(gameServerId, {
-       command: `location ${gameId}`
-   });
-   ```
+Get live player coordinates (for testing/admin use).
 
-2. **Bridge queues location request:**
-   - Request added to `locationRequestQueue`
-   - Includes player name and unique requestId
+**Usage:**
+```
+!location              - Get your own location
+!location <player>     - Get another player's location
+```
 
-3. **Lua polls for requests:**
-   - Every 1 second, Lua checks `/location-queue`
-   - Finds online player using `PlayerNamePrivate`
-   - Gets coordinates using `K2_GetActorLocation()`
-
-4. **Lua sends response:**
-   - Posts location data to `/location-response`
-   - Bridge receives and matches requestId
-
-5. **Module gets result:**
-   ```javascript
-   const location = locationCmd.data?.data || locationCmd.data;
-   // { x: -714269.9, y: -452173.1, z: -1262.5 }
-   ```
+**Module Configuration in Takaro:**
+- **Command Name:** `location`
+- **Command Arguments:**
+  - `player` (optional, string) - Player name to look up
 
 ---
 
-## Troubleshooting
+## Installation in Takaro
 
-### "Unable to get your current position"
+1. Go to **Takaro → Modules → Create Custom Module**
+2. Add a new **Command**
+3. Paste the module code from the `.js` file
+4. Set command name and arguments as specified above
+5. Enable module on your game server
 
-**Causes:**
-- Player not online
-- Player name mismatch between Takaro and in-game name
-- Location request timeout (5 seconds)
+---
 
-**Debug:**
-Check UE4SS logs for:
-```
-[LOCATION] Looking for 'PlayerName'. Available players:
-[LOCATION]   - 'ActualName1'
-[LOCATION]   - 'ActualName2'
-```
+## How It Works
 
-If player name doesn't match, check the bridge's player name mapping.
+### SetHome
+1. Gets player's current position from `pog.positionX/Y/Z`
+2. Saves to Takaro variables with key `home_location`
+3. Stores as JSON: `{"x": -713855, "y": -453462, "z": -1586}`
 
-### Location returns (0, 0, 0)
+### Home
+1. Loads saved position from Takaro variables
+2. Executes: `teleportplayer PlayerName X Y Z`
+3. Bridge queues teleport → Lua processes → Player teleports
 
-**Causes:**
-- Palworld server not running
-- UE4SS mod not loaded
-- TakaroChat scripts not initialized
+### Why This Approach?
 
-**Fix:**
-1. Restart Palworld server
-2. Check UE4SS.log for TakaroChat initialization
-3. Verify bridge is connected to Palworld API
+**Position Source:**
+- Uses Takaro's cached position data (updated every poll)
+- No need for complex command execution and response parsing
+- X/Y accurate, Z may be 0 (Palworld API limitation)
+
+**Teleport Method:**
+- Uses proven `teleportplayer` command (same as `!visit`)
+- Reliable queue-based system
+- Works with both player-to-player and coordinate teleports
 
 ---
 
 ## Dependencies
 
 **Required:**
-- Palworld Bridge running and connected
-- UE4SS mod installed on Palworld server
-- TakaroChat Lua scripts deployed
-- Bridge's location queue system enabled
+- Palworld Bridge running and connected to Takaro
+- UE4SS mod with TakaroChat Lua scripts
+- Bridge teleport queue system enabled
 
 **Bridge Version:** v1.3.0+
 
 ---
 
-## File Locations
+## Troubleshooting
 
-**Modules:** `/home/zmedh/Takaro-Projects/Palworld-Bridge/modules/`
-**Lua Scripts:** `C:\gameservers\palworld\Pal\Binaries\Win64\Mods\TakaroChat\Scripts\`
-**Bridge:** `C:\gameservers\Palworld-Bridge\`
+### "Unable to get your position"
+- Wait a few seconds for Takaro to poll player positions
+- Make sure you're online when setting home
+
+### Teleport fails
+- Check bridge logs for teleport queue activity
+- Verify Palworld server has UE4SS + TakaroChat mod loaded
+- Ensure bridge is connected to both Palworld and Takaro
+
+### Z coordinate is 0
+- This is expected - Palworld API doesn't provide Z coordinate
+- X/Y are accurate for teleport purposes
+- Z=0 will place you at ground level
 
 ---
 
-## Module Installation in Takaro
+## Example Module Code
 
-1. Go to Takaro → Modules → Create Custom Module
-2. Add a new command
-3. Paste the module code
-4. Configure command name and arguments
-5. Enable module on your game server
-
----
-
-## Example: Using Location in Your Own Module
-
+### Minimal SetHome
 ```javascript
 import { data, takaro } from '@takaro/helpers';
 
 async function main() {
-    const { gameServerId, pog } = data;
+    const { gameServerId, player, pog, module } = data;
 
-    // Get player's current location
-    const locationCmd = await takaro.gameserver.gameServerControllerExecuteCommand(gameServerId, {
-        command: `location ${pog.gameId}`
+    const position = {
+        x: pog.positionX,
+        y: pog.positionY,
+        z: pog.positionZ || 0
+    };
+
+    // Save to variable...
+}
+
+await main();
+```
+
+### Minimal Home
+```javascript
+import { data, takaro } from '@takaro/helpers';
+
+async function main() {
+    const { gameServerId, player } = data;
+
+    // Load from variable...
+    const position = JSON.parse(homeVar.value);
+
+    await takaro.gameserver.gameServerControllerExecuteCommand(gameServerId, {
+        command: `teleportplayer ${player.name} ${position.x} ${position.y} ${position.z}`
     });
-
-    const location = locationCmd.data?.data || locationCmd.data;
-
-    if (!location || (location.x === 0 && location.y === 0 && location.z === 0)) {
-        console.log("Failed to get location");
-        return;
-    }
-
-    // Use the location
-    console.log(`Player at: ${location.x}, ${location.y}, ${location.z}`);
 }
 
 await main();
@@ -170,8 +167,18 @@ await main();
 
 ---
 
+## Files in This Directory
+
+- `sethome-command.js` - Working sethome implementation ✅
+- `home-command.js` - Working home implementation ✅
+- `location-command.js` - Location lookup (testing/admin)
+- `get-player-location-helper.js` - Helper functions (legacy)
+- `README.md` - This file
+
+---
+
 ## Related Commands
 
-- **!visit <player>** - Teleport to another player (uses same location system)
-- **!home** - Teleport to your saved home location
-- **!sethome** - Save your current location as home
+- **!visit <player>** - Teleport to another player
+- **!sethome** - Save current location as home
+- **!home** - Teleport to saved home location
