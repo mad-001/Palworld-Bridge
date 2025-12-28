@@ -829,11 +829,18 @@ async function handleGetServerMetrics() {
 
 // Track active location requests to prevent duplicates
 const activeLocationRequests = new Set<string>();
+// Disable location system after first failure
+let locationSystemBroken = false;
 
 /**
  * Get player location by player ID
  */
 async function handleGetPlayerLocation(args: any) {
+  // If location system has failed before, don't try again
+  if (locationSystemBroken) {
+    return { x: 0, y: 0, z: 0 };
+  }
+
   try {
     const locationArgs = typeof args === 'string' ? JSON.parse(args) : args;
     const playerId = locationArgs.gameId || locationArgs.playerId || locationArgs.userId;
@@ -886,8 +893,9 @@ async function handleGetPlayerLocation(args: any) {
 
         logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
 
-        // Remove from active requests
+        // Remove from active requests and re-enable system on success
         activeLocationRequests.delete(playerId);
+        locationSystemBroken = false;
 
         return {
           x: response.x,
@@ -899,18 +907,20 @@ async function handleGetPlayerLocation(args: any) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    // Remove from active requests on timeout
+    // Remove from active requests on timeout and disable system
     activeLocationRequests.delete(playerId);
-    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
+    locationSystemBroken = true;
+    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId} - location system disabled`);
     return { x: 0, y: 0, z: 0 };
 
   } catch (error: any) {
-    // Remove from active requests on error
+    // Remove from active requests on error and disable system
     if (args && (args.gameId || args.playerId || args.userId)) {
       const playerId = args.gameId || args.playerId || args.userId;
       activeLocationRequests.delete(playerId);
     }
-    logger.error(`Failed to get player location: ${error.message}`);
+    locationSystemBroken = true;
+    logger.error(`Failed to get player location: ${error.message} - location system disabled`);
     return { x: 0, y: 0, z: 0 };
   }
 }
