@@ -1,6 +1,6 @@
 {
   "name": "palworld-bridge",
-  "version": "1.3.1",
+  "version": "1.3.2-discovery",
   "main": "index.js",
   "scripts": {
     "build": "tsc",

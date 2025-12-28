@@ -113,9 +113,23 @@ local function FetchTeleportQueue()
         logger:log(2, string.format("[TELEPORT] Queue response: %s", result or "nil"))
 
         if result and result ~= "" then
-            -- Parse JSON response for sourcePlayer and targetPlayer
+            -- Parse JSON response for teleports
             logger:log(2, "[TELEPORT] Parsing response for teleports...")
-            -- Use simpler pattern: match each field separately
+
+            -- First, try to match coordinate-based teleports
+            for match in result:gmatch('{[^}]*"sourcePlayer"%s*:%s*"([^"]+)"[^}]*}') do
+                local sourcePlayer = match
+                local x = result:match('"sourcePlayer"%s*:%s*"' .. sourcePlayer .. '"[^}]*"x"%s*:%s*([%d%.%-]+)')
+                local y = result:match('"sourcePlayer"%s*:%s*"' .. sourcePlayer .. '"[^}]*"y"%s*:%s*([%d%.%-]+)')
+                local z = result:match('"sourcePlayer"%s*:%s*"' .. sourcePlayer .. '"[^}]*"z"%s*:%s*([%d%.%-]+)')
+
+                if x and y and z then
+                    logger:log(2, string.format("[TELEPORT] Coordinate teleport: %s -> (%.1f, %.1f, %.1f)", sourcePlayer, tonumber(x), tonumber(y), tonumber(z)))
+                    QueueTeleport(sourcePlayer, tonumber(x), tonumber(y), tonumber(z))
+                end
+            end
+
+            -- Then, match player-to-player teleports
             for sourcePlayer, targetPlayer in result:gmatch('"sourcePlayer"%s*:%s*"([^"]+)"[^}]*"targetPlayer"%s*:%s*"([^"]+)"') do
                 logger:log(2, string.format("[TELEPORT] Found match: %s -> %s", sourcePlayer, targetPlayer))
                 -- Find target player using AdminEngine pattern

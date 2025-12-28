@@ -1,7 +1,7 @@
--- Takaro Chat Bridge for Palworld v1.3.1-discovery
+-- Takaro Chat Bridge for Palworld v1.4.0-location-discovery
 -- Modular bidirectional chat integration between Palworld, Takaro, and Discord
 
-print("=== Takaro Chat Bridge v1.3.1-discovery ===")
+print("=== Takaro Chat Bridge v1.4.0-location-discovery ===")
 
 -- Load configuration
 local config = require("config")
@@ -31,9 +31,13 @@ Discord.Initialize()
 local Teleport = require("teleport")
 Teleport.Initialize()
 
--- Data Discovery (comprehensive logging of all available Palworld data)
-local DataDiscovery = require("data_discovery")
-DataDiscovery.Initialize()
+-- Location lookup system (get player positions with Z coordinate)
+local Location = require("location")
+Location.Initialize()
+
+-- Deep Discovery (comprehensive inventory and guild data discovery)
+local DeepDiscovery = require("deep_discovery")
+DeepDiscovery.Initialize()
 
 -- Inventory tracking (DISABLED - causes crashes)
 -- Uncomment the lines below to enable (also set config.EnableInventoryTracking = true)
@@ -48,10 +52,10 @@ print("  Bridge: " .. (config.EnableBridge and "Enabled" or "Disabled"))
 print("  Discord Webhook: " .. (config.EnableDiscordWebhook and "Enabled" or "Disabled"))
 print("  Discord->Game: " .. (config.EnableDiscordToGame and "Enabled" or "Disabled"))
 print("  Logging: " .. (config.EnableLogging and "Enabled" or "Disabled"))
-print("  Teleport: Enabled")
-print("  Data Discovery: Enabled (logs every 60s)")
-print("  Inventory: Disabled (known issues)")
+print("  Teleport: Enabled (coordinate + player-to-player)")
+print("  Location Lookup: Enabled (full X/Y/Z coordinates)")
+print("  Deep Discovery: Running (inventory + guild properties)")
 print("==========================")
 print("")
 
-logger:log(2, "TakaroChat v1.3.1-discovery initialized successfully")
+logger:log(2, "TakaroChat v1.4.0-location-discovery initialized successfully")

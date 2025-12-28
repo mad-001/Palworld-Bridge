@@ -10,7 +10,7 @@ import { promisify } from 'util';
 const execPromise = promisify(exec);
 
 // Version
-const VERSION = '1.3.1-discovery';
+const VERSION = '1.3.2-discovery';
 
 // Load configuration from TakaroConfig.txt
 function loadConfig() {
@@ -138,10 +138,30 @@ const playerCache = new Map<string, { gameId: string; name: string; steamId: str
 // Teleport queue for pending teleports
 interface TeleportRequest {
   sourcePlayer: string;
-  targetPlayer: string;
+  targetPlayer?: string;  // Optional - used for player-to-player
+  x?: number;             // Optional - used for coordinate teleport
+  y?: number;
+  z?: number;
   timestamp: string;
 }
 const teleportQueue: TeleportRequest[] = [];
+
+// Location queue for getting player positions
+interface LocationRequest {
+  playerName: string;
+  requestId: string;
+  timestamp: string;
+}
+interface LocationResponse {
+  playerName: string;
+  requestId: string;
+  x: number;
+  y: number;
+  z: number;
+  timestamp: string;
+}
+const locationRequestQueue: LocationRequest[] = [];
+const locationResponseQueue: LocationResponse[] = [];
 
 // Metrics
 const metrics = {
@@ -252,6 +272,31 @@ app.get('/teleport-queue', (req, res) => {
   }
 });
 
+// Location request queue endpoint (polled by Lua)
+app.get('/location-queue', (req, res) => {
+  try {
+    const pending = [...locationRequestQueue];
+    locationRequestQueue.length = 0; // Clear queue
+    res.status(200).json({ requests: pending });
+  } catch (error: any) {
+    logger.error(`Location queue endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Location response endpoint (Lua posts location data here)
+app.post('/location-response', (req, res) => {
+  try {
+    const response: LocationResponse = req.body;
+    locationResponseQueue.push(response);
+    logger.info(`[LOCATION] Received response for ${response.playerName}: (${response.x}, ${response.y}, ${response.z})`);
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    logger.error(`Location response endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 /**
  * Send chat event to Takaro
  */
@@ -308,9 +353,9 @@ async function sendPlayerEvent(eventType: string, playerName: string, timestamp?
     let player: any = null;
 
     if (gameId) {
-      // Use provided gameId
+      // Use provided gameId - ensure it's a string
       const cachedPlayer = playerCache.get(gameId);
-      player = cachedPlayer || { name: playerName, gameId: gameId, steamId: gameId };
+      player = cachedPlayer || { name: playerName, gameId: String(gameId), steamId: String(gameId) };
     } else {
       // Try to find in cache by name
       for (const cachedPlayer of playerCache.values()) {
@@ -322,8 +367,8 @@ async function sendPlayerEvent(eventType: string, playerName: string, timestamp?
     }
 
     // Don't send event if we don't have a valid gameId
-    if (!player || !player.gameId) {
-      logger.error(`Cannot send ${eventType} event - no gameId for player: ${playerName}`);
+    if (!player || !player.gameId || typeof player.gameId !== 'string') {
+      logger.error(`Cannot send ${eventType} event - no valid gameId for player: ${playerName}`);
       return;
     }
 
@@ -334,9 +379,9 @@ async function sendPlayerEvent(eventType: string, playerName: string, timestamp?
         data: {
           type: eventType,
           player: {
-            name: player.name,
-            gameId: player.gameId,
-            steamId: player.steamId || player.gameId
+            name: String(player.name),
+            gameId: String(player.gameId),
+            steamId: String(player.steamId || player.gameId)
           }
         }
       }
@@ -795,21 +840,53 @@ async function handleGetPlayerLocation(args: any) {
       return { x: 0, y: 0, z: 0 };
     }
 
-    // Get all players to find the requested player
-    const players = await handleGetPlayers();
-    const player = players.find((p: any) => p.gameId === playerId || p.steamId === playerId);
-
-    if (!player) {
-      logger.debug(`Player ${playerId} not found for location lookup (likely offline)`);
+    // Get player's actual name from cache (Lua needs display name, not Steam ID)
+    const cachedPlayer = playerCache.get(playerId);
+    if (!cachedPlayer) {
+      logger.warn(`[LOCATION] Player ${playerId} not in cache`);
       return { x: 0, y: 0, z: 0 };
     }
 
-    // Return location in Takaro's expected format
-    return {
-      x: player.positionX !== undefined ? player.positionX : 0,
-      y: player.positionY !== undefined ? player.positionY : 0,
-      z: player.positionZ !== undefined ? player.positionZ : 0
-    };
+    const playerName = cachedPlayer.name;
+
+    // Generate unique request ID
+    const requestId = `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Queue location request for Lua to process (using display name)
+    locationRequestQueue.push({
+      playerName: playerName,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`[LOCATION] Queued request ${requestId} for ${playerName} (${playerId})`);
+
+    // Wait for response from Lua (with timeout)
+    const timeout = 5000;
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+      const responseIndex = locationResponseQueue.findIndex(r => r.requestId === requestId);
+
+      if (responseIndex !== -1) {
+        const response = locationResponseQueue[responseIndex];
+        locationResponseQueue.splice(responseIndex, 1);
+
+        logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
+
+        return {
+          x: response.x,
+          y: response.y,
+          z: response.z
+        };
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
+    return { x: 0, y: 0, z: 0 };
+
   } catch (error: any) {
     logger.error(`Failed to get player location: ${error.message}`);
     return { x: 0, y: 0, z: 0 };
@@ -853,34 +930,65 @@ async function handleGetPlayerInventory(args: any) {
 }
 
 /**
- * Teleport a player to another player's location
+ * Teleport a player to another player's location OR to specific coordinates
  */
 async function handleTeleportPlayer(args: any) {
   const teleportArgs = typeof args === 'string' ? JSON.parse(args) : args;
   const sourcePlayer = teleportArgs.sourcePlayer || teleportArgs.playerId;
   const targetPlayer = teleportArgs.targetPlayer || teleportArgs.destinationPlayer;
+  const x = teleportArgs.x;
+  const y = teleportArgs.y;
+  const z = teleportArgs.z;
 
-  if (!sourcePlayer || !targetPlayer) {
-    return { success: false, error: 'Both sourcePlayer and targetPlayer are required' };
+  if (!sourcePlayer) {
+    return { success: false, error: 'sourcePlayer is required' };
+  }
+
+  // Check if coordinate-based teleport
+  const isCoordinateTeleport = x !== undefined && y !== undefined && z !== undefined;
+
+  if (!isCoordinateTeleport && !targetPlayer) {
+    return { success: false, error: 'Either targetPlayer or coordinates (x, y, z) are required' };
   }
 
   try {
-    // Get all online players
+    // Get all online players to validate source
     const players = await handleGetPlayers();
 
-    // Find source and target players
+    // Find source player
     const source = players.find((p: any) =>
       p.name.toLowerCase() === sourcePlayer.toLowerCase() ||
       p.gameId === sourcePlayer
-    );
-    const target = players.find((p: any) =>
-      p.name.toLowerCase() === targetPlayer.toLowerCase() ||
-      p.gameId === targetPlayer
     );
 
     if (!source) {
       return { success: false, error: `Source player "${sourcePlayer}" not found online` };
     }
+
+    // Handle coordinate teleport
+    if (isCoordinateTeleport) {
+      teleportQueue.push({
+        sourcePlayer: source.name,
+        x,
+        y,
+        z,
+        timestamp: new Date().toISOString()
+      });
+
+      logger.info(`[TELEPORT] Queued ${source.name} -> (${x}, ${y}, ${z})`);
+
+      return {
+        success: true,
+        message: `Teleporting ${source.name} to coordinates (${x}, ${y}, ${z})`
+      };
+    }
+
+    // Handle player-to-player teleport
+    const target = players.find((p: any) =>
+      p.name.toLowerCase() === targetPlayer.toLowerCase() ||
+      p.gameId === targetPlayer
+    );
+
     if (!target) {
       return { success: false, error: `Target player "${targetPlayer}" not found online` };
     }
@@ -1122,10 +1230,31 @@ async function handleExecuteCommand(args: any) {
 
     case 'teleportplayer':
       if (cmdArguments.length < 2) {
-        return { success: false, rawResult: 'Usage: teleportplayer <source_player> <target_player>' };
+        return { success: false, rawResult: 'Usage: teleportplayer <source> <target> OR teleportplayer <source> <x> <y> <z>' };
       }
       try {
         const sourcePlayer = cmdArguments[0];
+
+        // Check if it's coordinate-based (3 numeric arguments after source)
+        if (cmdArguments.length === 4) {
+          const x = parseFloat(cmdArguments[1]);
+          const y = parseFloat(cmdArguments[2]);
+          const z = parseFloat(cmdArguments[3]);
+
+          if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+            const result = await handleTeleportPlayer({
+              sourcePlayer,
+              x,
+              y,
+              z
+            });
+            return result.success
+              ? { success: true, rawResult: result.message || `Teleport queued to (${x}, ${y}, ${z})` }
+              : { success: false, rawResult: result.error };
+          }
+        }
+
+        // Player-to-player teleport
         const targetPlayer = cmdArguments.slice(1).join(' '); // Handle spaces in player names
         const result = await handleTeleportPlayer({
           sourcePlayer,
@@ -1134,6 +1263,26 @@ async function handleExecuteCommand(args: any) {
         return result.success
           ? { success: true, rawResult: result.message || 'Teleport queued' }
           : { success: false, rawResult: result.error };
+      } catch (error: any) {
+        return { success: false, rawResult: `Error: ${error.message}` };
+      }
+
+    case 'location':
+    case 'getlocation':
+      if (cmdArguments.length === 0) {
+        return { success: false, rawResult: 'Usage: location <player_name_or_gameid>' };
+      }
+      try {
+        const playerIdentifier = cmdArguments.join(' ');
+        const location = await handleGetPlayerLocation({ gameId: playerIdentifier, playerId: playerIdentifier, userId: playerIdentifier });
+        if (location.x === 0 && location.y === 0 && location.z === 0) {
+          return { success: false, rawResult: `Unable to get location for "${playerIdentifier}"` };
+        }
+        return {
+          success: true,
+          rawResult: JSON.stringify(location),
+          data: location
+        };
       } catch (error: any) {
         return { success: false, rawResult: `Error: ${error.message}` };
       }
