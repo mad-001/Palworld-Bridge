@@ -694,7 +694,7 @@ async function handleGetPlayers(detectChanges: boolean = false) {
 
     const mappedPlayers = players.map((player: any) => ({
       gameId: String(player.userId),
-      name: String(player.accountName || player.name), // Use accountName (Steam name) which matches PlayerNamePrivate
+      name: String(player.name), // Use in-game character name (what PlayerNamePrivate actually returns)
       platformId: `palworld:${player.userId}`,
       steamId: String(player.userId),
       ip: player.ip || undefined,
