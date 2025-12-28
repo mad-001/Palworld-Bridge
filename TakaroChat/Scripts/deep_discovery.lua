@@ -12,6 +12,19 @@ local function DeepEnumerate(obj, path, useGet)
         return
     end
 
+    -- Check if original object is valid before trying :get()
+    local objValid = false
+    local validCheckSuccess = pcall(function()
+        if obj.IsValid then
+            objValid = obj:IsValid()
+        end
+    end)
+
+    if not objValid then
+        logger:log(2, string.format("%s: object not valid, skipping", path))
+        return
+    end
+
     -- Try :get() if requested
     local targetObj = obj
     if useGet then
@@ -27,7 +40,7 @@ local function DeepEnumerate(obj, path, useGet)
         end
     end
 
-    -- Check IsValid
+    -- Check IsValid on target object
     local validSuccess, isValid = pcall(function()
         return targetObj:IsValid()
     end)
