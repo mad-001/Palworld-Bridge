@@ -827,18 +827,10 @@ async function handleGetServerMetrics() {
   }
 }
 
-// Track if location system is broken
-let locationSystemDisabled = false;
-
 /**
  * Get player location by player ID
  */
 async function handleGetPlayerLocation(args: any) {
-  // Stop trying if location system failed
-  if (locationSystemDisabled) {
-    return { x: 0, y: 0, z: 0 };
-  }
-
   try {
     const locationArgs = typeof args === 'string' ? JSON.parse(args) : args;
     const playerId = locationArgs.gameId || locationArgs.playerId || locationArgs.userId;
@@ -882,9 +874,6 @@ async function handleGetPlayerLocation(args: any) {
 
         logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
 
-        // Re-enable location system on success
-        locationSystemDisabled = false;
-
         return {
           x: response.x,
           y: response.y,
@@ -895,13 +884,11 @@ async function handleGetPlayerLocation(args: any) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    locationSystemDisabled = true;
-    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId} - disabling location system`);
+    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
     return { x: 0, y: 0, z: 0 };
 
   } catch (error: any) {
-    locationSystemDisabled = true;
-    logger.error(`Failed to get player location: ${error.message} - disabling location system`);
+    logger.error(`Failed to get player location: ${error.message}`);
     return { x: 0, y: 0, z: 0 };
   }
 }
