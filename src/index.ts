@@ -827,17 +827,15 @@ async function handleGetServerMetrics() {
   }
 }
 
-// Track consecutive location failures to stop retrying
-let locationFailureCount = 0;
-const MAX_LOCATION_FAILURES = 1;
+// Track if location system is broken
+let locationSystemDisabled = false;
 
 /**
  * Get player location by player ID
  */
 async function handleGetPlayerLocation(args: any) {
-  // Stop trying if we've had too many consecutive failures
-  if (locationFailureCount >= MAX_LOCATION_FAILURES) {
-    logger.debug(`[LOCATION] Skipping request - too many failures (${locationFailureCount})`);
+  // Stop trying if location system failed
+  if (locationSystemDisabled) {
     return { x: 0, y: 0, z: 0 };
   }
 
@@ -884,8 +882,8 @@ async function handleGetPlayerLocation(args: any) {
 
         logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
 
-        // Reset failure counter on success
-        locationFailureCount = 0;
+        // Re-enable location system on success
+        locationSystemDisabled = false;
 
         return {
           x: response.x,
@@ -897,13 +895,13 @@ async function handleGetPlayerLocation(args: any) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    locationFailureCount++;
-    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId} (failures: ${locationFailureCount}/${MAX_LOCATION_FAILURES})`);
+    locationSystemDisabled = true;
+    logger.warn(`[LOCATION] Timeout waiting for location of ${playerId} - disabling location system`);
     return { x: 0, y: 0, z: 0 };
 
   } catch (error: any) {
-    locationFailureCount++;
-    logger.error(`Failed to get player location: ${error.message}`);
+    locationSystemDisabled = true;
+    logger.error(`Failed to get player location: ${error.message} - disabling location system`);
     return { x: 0, y: 0, z: 0 };
   }
 }
