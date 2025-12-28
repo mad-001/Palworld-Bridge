@@ -289,7 +289,7 @@ app.post('/location-response', (req, res) => {
   try {
     const response: LocationResponse = req.body;
     locationResponseQueue.push(response);
-    logger.info(`[LOCATION] Received response for ${response.playerName}: (${response.x}, ${response.y}, ${response.z})`);
+    logger.debug(`[LOCATION] Received response for ${response.playerName}: (${response.x}, ${response.y}, ${response.z})`);
     res.status(200).json({ success: true });
   } catch (error: any) {
     logger.error(`Location response endpoint error: ${error.message}`);
@@ -871,7 +871,7 @@ async function handleGetPlayerLocation(args: any) {
       timestamp: new Date().toISOString()
     });
 
-    logger.info(`[LOCATION] Queued request ${requestId} for ${playerName} (${playerId})`);
+    logger.debug(`[LOCATION] Queued request ${requestId} for ${playerName} (${playerId})`);
 
     // Wait for response from Lua (with timeout)
     const timeout = 5000;
@@ -884,7 +884,7 @@ async function handleGetPlayerLocation(args: any) {
         const response = locationResponseQueue[responseIndex];
         locationResponseQueue.splice(responseIndex, 1);
 
-        logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
+        logger.debug(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
 
         // Remove from active requests
         activeLocationRequests.delete(playerId);
@@ -910,7 +910,7 @@ async function handleGetPlayerLocation(args: any) {
     const queueIndex = locationRequestQueue.findIndex(r => r.requestId === requestId);
     if (queueIndex !== -1) {
       locationRequestQueue.splice(queueIndex, 1);
-      logger.info(`[LOCATION] Removed timed out request ${requestId} from queue`);
+      logger.debug(`[LOCATION] Removed timed out request ${requestId} from queue`);
     }
     logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
     return { x: 0, y: 0, z: 0 };
