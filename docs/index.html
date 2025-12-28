@@ -149,8 +149,18 @@
 </head>
 <body>
     <div class="container">
-        <h1>Palworld-Takaro Bridge <span style="font-size: 0.6em; color: #a0a0a0;">v1.3.0</span></h1>
+        <h1>Palworld-Takaro Bridge <span style="font-size: 0.6em; color: #a0a0a0;">v1.4.0</span></h1>
         <p style="font-size: 1.2em; margin-bottom: 30px;">Connect your Palworld dedicated server to Takaro for Discord integration, player management, and server control.</p>
+
+        <div class="note">
+            <strong>What's New in v1.4.0:</strong>
+            <ul style="margin-left: 20px; margin-top: 10px;">
+                <li><strong>Location Command Enhancement</strong> - Now supports player names (case-insensitive), not just Steam IDs</li>
+                <li><strong>Reduced Logging</strong> - Silent polling, only shows errors and actual activity</li>
+                <li><strong>Stability Fixes</strong> - Fixed deep_discovery.lua nullptr errors</li>
+                <li><strong>Teleport Improvements</strong> - Enhanced coordinate and player-to-player teleport system</li>
+            </ul>
+        </div>
 
         <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" class="download-btn">Download Latest Release</a>
         <a href="https://github.com/mad-001/Palworld-Bridge/releases" class="download-btn">View Previous Versions</a>
@@ -160,6 +170,8 @@
             <li><strong>Bridge Service</strong> - Connects Palworld REST API to Takaro platform</li>
             <li><strong>Player Tracking</strong> - Real-time location tracking and connect/disconnect events</li>
             <li><strong>Console Commands</strong> - Kick, ban, announce, shutdown from Takaro web console</li>
+            <li><strong>Teleport System</strong> - Player-to-player and coordinate-based teleportation via queue system</li>
+            <li><strong>Location Lookup</strong> - Get live player coordinates (X/Y/Z) by name or Steam ID</li>
             <li><strong>Chat Integration</strong> - Optional UE4SS mod for game chat to Discord (bi-directional)</li>
         </ul>
 
@@ -283,6 +295,9 @@ config.CaptureCategories = {1, 2, 3}  -- 1=Say, 2=Guild, 3=Global</code></pre>
             <li><code>kick &lt;player_name&gt;</code> - Kick player</li>
             <li><code>ban &lt;player_name&gt;</code> - Ban player</li>
             <li><code>unban &lt;steam_id&gt;</code> - Unban player</li>
+            <li><code>teleportplayer &lt;source&gt; &lt;target&gt;</code> - Teleport player to another player</li>
+            <li><code>teleportplayer &lt;source&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt;</code> - Teleport player to coordinates</li>
+            <li><code>location &lt;player_name_or_gameid&gt;</code> - Get live player coordinates</li>
         </ul>
 
         <h2>Troubleshooting</h2>
