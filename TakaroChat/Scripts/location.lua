@@ -36,11 +36,11 @@ local function FetchLocationRequests()
         logger:log(2, string.format("[LOCATION] Queue response: %s", result or "nil"))
 
         if result and result ~= "" then
-            -- Parse JSON response for location requests
-            for playerName, requestId in result:gmatch('"playerName"%s*:%s*"([^"]+)"%s*,[^}]*"requestId"%s*:%s*"([^"]+)"') do
-                logger:log(2, string.format("[LOCATION] Request %s for player %s", requestId, playerName))
+            -- Parse JSON response for location requests (now using playerId/Steam ID)
+            for playerId, playerName, requestId in result:gmatch('"playerId"%s*:%s*"([^"]+)"%s*,[^}]*"playerName"%s*:%s*"([^"]+)"%s*,[^}]*"requestId"%s*:%s*"([^"]+)"') do
+                logger:log(2, string.format("[LOCATION] Request %s for player %s (%s)", requestId, playerName, playerId))
 
-                -- Find the player
+                -- Find the player by Steam ID (more reliable than name)
                 local PlayersList = FindAllOf("PalPlayerCharacter")
                 if not PlayersList then
                     logger:log(1, "[LOCATION] ERROR: FindAllOf returned nil")
@@ -50,8 +50,8 @@ local function FetchLocationRequests()
                         if Player ~= nil and Player and Player:IsValid() then
                             local playerState = Player.PlayerState
                             if playerState and playerState:IsValid() then
-                                local currentName = playerState.PlayerNamePrivate:ToString()
-                                if currentName == playerName then
+                                local currentPlayerId = tostring(playerState.PlayerId)
+                                if currentPlayerId == playerId then
                                     playerFound = true
 
                                     -- Get player location using K2_GetActorLocation (same as teleport)
@@ -87,7 +87,7 @@ local function FetchLocationRequests()
                     end
 
                     if not playerFound then
-                        logger:log(1, string.format("[LOCATION] ERROR: Player '%s' not found online", playerName))
+                        logger:log(1, string.format("[LOCATION] ERROR: Player '%s' (%s) not found online", playerName, playerId))
                     end
                 end
             end

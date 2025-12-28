@@ -148,6 +148,7 @@ const teleportQueue: TeleportRequest[] = [];
 
 // Location queue for getting player positions
 interface LocationRequest {
+  playerId: string;
   playerName: string;
   requestId: string;
   timestamp: string;
@@ -864,9 +865,10 @@ async function handleGetPlayerLocation(args: any) {
     // Generate unique request ID
     const requestId = `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Queue location request for Lua to process (using display name)
+    // Queue location request for Lua to process (using Steam ID for reliable matching)
     locationRequestQueue.push({
-      playerName: playerName,
+      playerId: playerId,
+      playerName: playerName, // Keep for logging
       requestId,
       timestamp: new Date().toISOString()
     });
