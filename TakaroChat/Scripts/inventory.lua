@@ -1,6 +1,5 @@
 -- Inventory tracking module
--- WARNING: DISABLED BY DEFAULT - causes crashes and validation issues
--- To enable: Uncomment require("inventory") in main.lua AND set config.EnableInventoryTracking = true
+-- Fixed to use PlayerState:GetInventoryData() instead of InventoryComponent
 
 local config = require("config")
 local Utils = require("utils")
@@ -14,6 +13,12 @@ local function SendInventoryToBridge(playerName, inventoryData)
         return
     end
 
+    local bridgeHost = config.BridgeURL:match("http://([^/]+)")
+    if not bridgeHost then
+        logger:log(1, "[INVENTORY] Could not extract bridge host from URL")
+        return
+    end
+
     local json = string.format(
         '{"type":"inventory","playerName":"%s","timestamp":"%s","inventory":%s}',
         Utils.EscapeJSON(playerName),
@@ -21,14 +26,25 @@ local function SendInventoryToBridge(playerName, inventoryData)
         inventoryData
     )
 
-    local command = string.format(
-        'curl -s -X POST -H "Content-Type: application/json" -d "%s" %s',
-        json:gsub('"', '\\"'),
-        config.BridgeURL
+    local jsonEscaped = json:gsub('"', '\\"')
+    local curlCommand = string.format(
+        'curl -s -m 3 -X POST -H "Content-Type: application/json" -d "%s" http://%s',
+        jsonEscaped,
+        bridgeHost
     )
 
-    os.execute('start /B "" ' .. command .. ' >nul 2>&1')
-    logger:log(3, string.format("Sent inventory for: %s", playerName))
+    -- Execute synchronously
+    local handle = io.popen(curlCommand .. ' 2>&1')
+    if handle then
+        local result = handle:read("*a")
+        local success = handle:close()
+
+        if success and result:match('"success"%s*:%s*true') then
+            logger:log(3, string.format("[INVENTORY] Sent inventory for: %s", playerName))
+        else
+            logger:log(1, string.format("[INVENTORY] Failed to send for %s: %s", playerName, result))
+        end
+    end
 end
 
 -- Get player inventory and send to bridge
@@ -41,34 +57,37 @@ local function UpdatePlayerInventories()
 
         for _, player in ipairs(players) do
             if player and player:IsValid() then
-                local playerState = player:get().PlayerState
+                local playerState = player.PlayerState
                 if playerState and playerState:IsValid() then
-                    local playerName = playerState:get().PlayerNamePrivate:ToString()
+                    local playerName = playerState.PlayerNamePrivate:ToString()
 
-                    -- Try to get inventory container
-                    local inventoryComponent = player:get().InventoryComponent
-                    if inventoryComponent and inventoryComponent:IsValid() then
+                    -- Use PlayerState:GetInventoryData() - the correct approach!
+                    local inventoryData = playerState:GetInventoryData()
+                    if inventoryData and inventoryData:IsValid() then
                         local items = {}
-                        local container = inventoryComponent:get().Container
 
-                        if container and container:IsValid() then
-                            -- Iterate through inventory slots
-                            local slots = container:get().Slots
-                            if slots then
-                                for i = 0, 50 do -- Max 50 slots
-                                    local success2, slot = pcall(function() return slots[i] end)
-                                    if success2 and slot and slot:IsValid() then
-                                        local itemData = slot:get().ItemData
-                                        if itemData and itemData:IsValid() then
-                                            local staticId = itemData:get().ItemStaticId
-                                            local count = itemData:get().Count
+                        -- Access inventory containers
+                        local containers = inventoryData.InventoryMultiHelper.Containers
+                        if containers then
+                            -- Iterate through containers (0 = main inventory, 1+ = other slots)
+                            for containerIdx = 0, 10 do
+                                local containerSuccess, container = pcall(function() return containers[containerIdx] end)
+                                if containerSuccess and container then
+                                    -- Iterate through slots in this container
+                                    for slotIdx = 0, 50 do
+                                        local slotSuccess, slot = pcall(function() return container:Get(slotIdx) end)
+                                        if slotSuccess and slot then
+                                            local itemId = slot:GetItemId()
+                                            local stackCount = slot:GetStackCount()
 
-                                            if staticId and count and count > 0 then
+                                            if itemId and stackCount and stackCount > 0 then
+                                                local itemIdStr = tostring(itemId.StaticId:ToString())
                                                 table.insert(items, string.format(
-                                                    '{"id":"%s","count":%d,"slot":%d}',
-                                                    tostring(staticId),
-                                                    count,
-                                                    i
+                                                    '{"id":"%s","count":%d,"container":%d,"slot":%d}',
+                                                    itemIdStr,
+                                                    stackCount,
+                                                    containerIdx,
+                                                    slotIdx
                                                 ))
                                             end
                                         end
@@ -86,25 +105,25 @@ local function UpdatePlayerInventories()
     end)
 
     if not success then
-        logger:log(1, "Error updating inventories: " .. tostring(err))
+        logger:log(1, "[INVENTORY] Error updating inventories: " .. tostring(err))
     end
 end
 
 -- Initialize inventory tracking
 function Inventory.Initialize()
     if not config.EnableInventoryTracking then
-        logger:log(1, "Inventory tracking is DISABLED (known to cause crashes)")
+        logger:log(2, "[INVENTORY] Inventory tracking is disabled in config")
         return
     end
 
-    logger:log(2, "Starting inventory tracking...")
+    logger:log(2, "[INVENTORY] Starting inventory tracking (using PlayerState:GetInventoryData)...")
 
     LoopAsync(config.InventoryUpdateInterval * 1000, function()
         UpdatePlayerInventories()
         return false
     end)
 
-    logger:log(2, string.format("Inventory tracking started (every %ds)", config.InventoryUpdateInterval))
+    logger:log(2, string.format("[INVENTORY] Inventory tracking started (every %ds)", config.InventoryUpdateInterval))
 end
 
 return Inventory

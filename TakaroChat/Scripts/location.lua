@@ -41,26 +41,33 @@ local function FetchLocationRequests()
                 if not PlayersList then
                     logger:log(1, "[LOCATION] ERROR: FindAllOf returned nil")
                 else
+                    -- Count total players found
+                    local totalCount = 0
+                    for _ in ipairs(PlayersList) do totalCount = totalCount + 1 end
+
                     -- Log all available player names for debugging
-                    logger:log(2, string.format("[LOCATION] Looking for '%s'. Available players:", playerName))
+                    logger:log(2, string.format("[LOCATION] Looking for '%s'. FindAllOf returned %d players. Valid players:", playerName, totalCount))
                     for _, Player in ipairs(PlayersList) do
                         if Player ~= nil and Player and Player:IsValid() then
-                            local playerState = Player.PlayerState
-                            if playerState and playerState:IsValid() then
-                                local availableName = playerState.PlayerNamePrivate:ToString()
+                            -- Use direct property access like teleport.lua (AdminEngine pattern)
+                            local success, availableName = pcall(function() return Player.PlayerState.PlayerNamePrivate:ToString() end)
+                            if success and availableName then
                                 logger:log(2, string.format("[LOCATION]   - '%s'", availableName))
+                            else
+                                logger:log(1, "[LOCATION] WARNING: Player has invalid PlayerState")
                             end
+                        else
+                            logger:log(1, "[LOCATION] WARNING: Player object is invalid")
                         end
                     end
 
-                    -- Find the player
+                    -- Find the player (use direct access like teleport.lua)
                     local playerFound = false
                     for _, Player in ipairs(PlayersList) do
                         if Player ~= nil and Player and Player:IsValid() then
-                            local playerState = Player.PlayerState
-                            if playerState and playerState:IsValid() then
-                                local currentName = playerState.PlayerNamePrivate:ToString()
-                                if currentName == playerName then
+                            -- Direct property access like AdminEngine/teleport
+                            local success, currentName = pcall(function() return Player.PlayerState.PlayerNamePrivate:ToString() end)
+                            if success and currentName and currentName == playerName then
                                     playerFound = true
 
                                     -- Get player location using K2_GetActorLocation (same as teleport)
@@ -80,18 +87,29 @@ local function FetchLocationRequests()
                                     -- Escape double quotes for curl (need to use \" in Windows)
                                     local jsonEscaped = json:gsub('"', '\\"')
 
-                                    -- Use curl for reliable JSON POST
+                                    -- Use curl with timeout for reliable JSON POST
                                     local curlCommand = string.format(
-                                        'curl -s -X POST -H "Content-Type: application/json" -d "%s" http://%s/location-response',
+                                        'curl -s -m 3 -X POST -H "Content-Type: application/json" -d "%s" http://%s/location-response',
                                         jsonEscaped,
                                         bridgeHost
                                     )
 
-                                    os.execute('start /B "" ' .. curlCommand .. ' >nul 2>&1')
-                                    logger:log(2, string.format("[LOCATION] Sent response for %s: (%.1f, %.1f, %.1f)", playerName, location.X, location.Y, location.Z))
+                                    -- Execute synchronously and capture result
+                                    local handle = io.popen(curlCommand .. ' 2>&1')
+                                    if handle then
+                                        local result = handle:read("*a")
+                                        local success = handle:close()
+
+                                        if success and result:match('"success"%s*:%s*true') then
+                                            logger:log(2, string.format("[LOCATION] Sent response for %s: (%.1f, %.1f, %.1f)", playerName, location.X, location.Y, location.Z))
+                                        else
+                                            logger:log(1, string.format("[LOCATION] Failed to send response for %s: %s", playerName, result))
+                                        end
+                                    else
+                                        logger:log(1, string.format("[LOCATION] Failed to execute curl for %s", playerName))
+                                    end
                                     break
                                 end
-                            end
                         end
                     end
 

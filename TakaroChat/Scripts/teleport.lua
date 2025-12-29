@@ -41,8 +41,11 @@ local function ProcessTeleports()
 
         for _, player in ipairs(players) do
             if player and player:IsValid() then
-                -- Use direct property access like AdminEngine
-                local playerName = player.PlayerState.PlayerNamePrivate:ToString()
+                -- Use direct property access with pcall protection
+                local success, playerName = pcall(function() return player.PlayerState.PlayerNamePrivate:ToString() end)
+                if not success or not playerName then
+                    goto continue
+                end
 
                 -- Check if this player has pending teleport
                 for i = #teleportQueue, 1, -1 do
@@ -75,6 +78,7 @@ local function ProcessTeleports()
                         table.remove(teleportQueue, i)
                     end
                 end
+                ::continue::
             end
         end
     end)
@@ -135,17 +139,15 @@ local function FetchTeleportQueue()
                     local targetFound = false
                     for _, TPlayer in ipairs(PlayersList) do
                         if TPlayer ~= nil and TPlayer and TPlayer:IsValid() then
-                            local playerState = TPlayer.PlayerState
-                            if playerState and playerState:IsValid() then
-                                local targetName = playerState.PlayerNamePrivate:ToString()
-                                if targetName == targetPlayer then
-                                    targetFound = true
-                                    -- Get location directly from PalPlayerCharacter (AdminEngine line 69)
-                                    local location = TPlayer:K2_GetActorLocation()
-                                    logger:log(2, string.format("[TELEPORT] %s -> %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
-                                    QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
-                                    break
-                                end
+                            -- Use direct property access with pcall (like location.lua fix)
+                            local success, targetName = pcall(function() return TPlayer.PlayerState.PlayerNamePrivate:ToString() end)
+                            if success and targetName and targetName == targetPlayer then
+                                targetFound = true
+                                -- Get location directly from PalPlayerCharacter (AdminEngine line 69)
+                                local location = TPlayer:K2_GetActorLocation()
+                                logger:log(2, string.format("[TELEPORT] %s -> %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
+                                QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
+                                break
                             end
                         end
                     end

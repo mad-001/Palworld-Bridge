@@ -1,7 +1,8 @@
--- Takaro Chat Bridge for Palworld v1.4.0-location-discovery
+-- Takaro Chat Bridge for Palworld v1.5.0
 -- Modular bidirectional chat integration between Palworld, Takaro, and Discord
+-- Features: Chat, Events, Discord, Teleport, Location, Items, Inventory
 
-print("=== Takaro Chat Bridge v1.4.0-location-discovery ===")
+print("=== Takaro Chat Bridge v1.5.0 ===")
 
 -- Load configuration
 local config = require("config")
@@ -35,14 +36,14 @@ Teleport.Initialize()
 local Location = require("location")
 Location.Initialize()
 
--- Deep Discovery (comprehensive inventory and guild data discovery)
-local DeepDiscovery = require("deep_discovery")
-DeepDiscovery.Initialize()
+-- Item giving system (allows giving items to players via bridge)
+local Items = require("items")
+Items.Initialize()
 
--- Inventory tracking (DISABLED - causes crashes)
--- Uncomment the lines below to enable (also set config.EnableInventoryTracking = true)
--- local Inventory = require("inventory")
--- Inventory.Initialize()
+-- Inventory tracking (Fixed - now uses PlayerState:GetInventoryData)
+-- Enable in config.lua by setting config.EnableInventoryTracking = true
+local Inventory = require("inventory")
+Inventory.Initialize()
 
 -- Status summary
 print("")
@@ -54,8 +55,9 @@ print("  Discord->Game: " .. (config.EnableDiscordToGame and "Enabled" or "Disab
 print("  Logging: " .. (config.EnableLogging and "Enabled" or "Disabled"))
 print("  Teleport: Enabled (coordinate + player-to-player)")
 print("  Location Lookup: Enabled (full X/Y/Z coordinates)")
-print("  Deep Discovery: Running (inventory + guild properties)")
+print("  Item Giving: Enabled (via bridge API)")
+print("  Inventory Tracking: " .. (config.EnableInventoryTracking and "Enabled" or "Disabled"))
 print("==========================")
 print("")
 
-logger:log(2, "TakaroChat v1.4.0-location-discovery initialized successfully")
+logger:log(2, "TakaroChat v1.5.0 initialized successfully")

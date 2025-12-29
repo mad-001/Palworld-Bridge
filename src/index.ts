@@ -73,6 +73,31 @@ const logger = winston.createLogger({
   ]
 });
 
+// Function to clean up old log files (keep only 10 most recent)
+function cleanupOldLogs() {
+  try {
+    const files = fs.readdirSync(logsDir)
+      .filter(f => f.endsWith('.log'))
+      .map(f => ({
+        name: f,
+        path: path.join(logsDir, f),
+        mtime: fs.statSync(path.join(logsDir, f)).mtime
+      }))
+      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime()); // Sort newest first
+
+    // Keep only the 10 most recent, delete the rest
+    if (files.length > 10) {
+      const filesToDelete = files.slice(10);
+      filesToDelete.forEach(file => {
+        fs.unlinkSync(file.path);
+        logger.info(`Deleted old log file: ${file.name}`);
+      });
+    }
+  } catch (error: any) {
+    logger.error(`Failed to cleanup old logs: ${error.message}`);
+  }
+}
+
 // Rotate log file every hour
 setInterval(() => {
   const newLogFilename = getLogFilename();
@@ -88,6 +113,9 @@ setInterval(() => {
     logger.add(fileTransport);
 
     logger.info('Log file rotated to: ' + currentLogFilename);
+
+    // Clean up old logs after rotation
+    cleanupOldLogs();
   }
 }, 60000); // Check every minute
 
@@ -162,6 +190,28 @@ interface LocationResponse {
 }
 const locationRequestQueue: LocationRequest[] = [];
 const locationResponseQueue: LocationResponse[] = [];
+
+// Item giving system
+interface ItemRequest {
+  playerName: string;
+  itemId: string;
+  quantity: number;
+  requestId: string;
+  timestamp: string;
+}
+interface ItemResponse {
+  requestId: string;
+  playerName: string;
+  itemId: string;
+  quantity: number;
+  success: boolean;
+  timestamp: string;
+}
+const itemRequestQueue: ItemRequest[] = [];
+const itemResponseQueue: ItemResponse[] = [];
+
+// Map playerName to steamId for location request tracking
+const playerNameToSteamId = new Map<string, string>();
 
 // Metrics
 const metrics = {
@@ -289,10 +339,46 @@ app.post('/location-response', (req, res) => {
   try {
     const response: LocationResponse = req.body;
     locationResponseQueue.push(response);
-    logger.debug(`[LOCATION] Received response for ${response.playerName}: (${response.x}, ${response.y}, ${response.z})`);
+    logger.info(`[LOCATION] Received response for ${response.playerName}: (${response.x}, ${response.y}, ${response.z})`);
+
+    // Update player cache with authoritative name from UE4SS (what PlayerNamePrivate actually shows)
+    // This corrects cases where Palworld API returns inconsistent names
+    const steamId = playerNameToSteamId.get(response.playerName);
+    if (steamId) {
+      const cachedPlayer = playerCache.get(steamId);
+      if (cachedPlayer && cachedPlayer.name !== response.playerName) {
+        playerCache.set(steamId, { ...cachedPlayer, name: response.playerName });
+        logger.info(`[LOCATION] Updated cached name for ${steamId}: "${cachedPlayer.name}" -> "${response.playerName}"`);
+      }
+    }
+
     res.status(200).json({ success: true });
   } catch (error: any) {
     logger.error(`Location response endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Item request queue endpoint (polled by Lua)
+app.get('/item-queue', (req, res) => {
+  try {
+    const pending = [...itemRequestQueue];
+    res.status(200).json({ requests: pending });
+  } catch (error: any) {
+    logger.error(`Item queue endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Item response endpoint (Lua posts response here)
+app.post('/item-response', (req, res) => {
+  try {
+    const response: ItemResponse = req.body;
+    itemResponseQueue.push(response);
+    logger.info(`[ITEMS] ${response.success ? 'Gave' : 'Failed to give'} ${response.quantity}x ${response.itemId} to ${response.playerName}`);
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    logger.error(`Item response endpoint error: ${error.message}`);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -605,6 +691,10 @@ async function handleTakaroRequest(message: any) {
         responsePayload = await handleGetPlayerInventory(args);
         break;
 
+      case 'giveItem':
+        responsePayload = await handleGiveItem(args);
+        break;
+
       case 'teleportPlayer':
         responsePayload = await handleTeleportPlayer(args);
         break;
@@ -694,7 +784,7 @@ async function handleGetPlayers(detectChanges: boolean = false) {
 
     const mappedPlayers = players.map((player: any) => ({
       gameId: String(player.userId),
-      name: String(player.name), // Use in-game character name (what PlayerNamePrivate actually returns)
+      name: String(player.name), // Use character name (what UE4SS PlayerNamePrivate:ToString() returns)
       platformId: `palworld:${player.userId}`,
       steamId: String(player.userId),
       ip: player.ip || undefined,
@@ -883,7 +973,10 @@ async function handleGetPlayerLocation(args: any) {
       timestamp: new Date().toISOString()
     });
 
-    logger.debug(`[LOCATION] Queued request ${requestId} for ${playerName} (${playerId})`);
+    // Track playerName -> steamId mapping for cache updates
+    playerNameToSteamId.set(playerName, playerId);
+
+    logger.info(`[LOCATION] Queued request ${requestId} for ${playerName} (${playerId})`);
 
     // Wait for response from Lua (with timeout)
     const timeout = 5000;
@@ -896,7 +989,7 @@ async function handleGetPlayerLocation(args: any) {
         const response = locationResponseQueue[responseIndex];
         locationResponseQueue.splice(responseIndex, 1);
 
-        logger.debug(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
+        logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
 
         // Remove from active requests
         activeLocationRequests.delete(playerId);
@@ -971,6 +1064,94 @@ async function handleGetPlayerInventory(args: any) {
   } catch (error: any) {
     logger.error(`Failed to get player inventory: ${error.message}`);
     return [];
+  }
+}
+
+/**
+ * Give an item to a player
+ */
+async function handleGiveItem(args: any) {
+  try {
+    const itemArgs = typeof args === 'string' ? JSON.parse(args) : args;
+    const playerId = itemArgs.gameId || itemArgs.playerId || itemArgs.userId;
+    const itemId = itemArgs.itemId || itemArgs.item;
+    const quantity = itemArgs.quantity || itemArgs.amount || 1;
+
+    if (!playerId) {
+      logger.error('[ITEMS] No player ID provided for giveItem');
+      return { success: false, error: 'No player ID provided' };
+    }
+
+    if (!itemId) {
+      logger.error('[ITEMS] No item ID provided for giveItem');
+      return { success: false, error: 'No item ID provided' };
+    }
+
+    // Get player's name from cache
+    const players = await handleGetPlayers();
+    const player = players.find((p: any) => p.gameId === playerId || p.steamId === playerId || p.name === playerId);
+
+    if (!player) {
+      logger.warn(`[ITEMS] Player ${playerId} not found`);
+      return { success: false, error: 'Player not found' };
+    }
+
+    const playerName = player.name;
+
+    // Generate unique request ID
+    const requestId = `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Queue item request for Lua to process
+    itemRequestQueue.push({
+      playerName,
+      itemId,
+      quantity,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`[ITEMS] Queued request ${requestId}: Give ${quantity}x ${itemId} to ${playerName}`);
+
+    // Wait for response from Lua (with timeout)
+    const timeout = 5000;
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+      const responseIndex = itemResponseQueue.findIndex(r => r.requestId === requestId);
+
+      if (responseIndex !== -1) {
+        const response = itemResponseQueue[responseIndex];
+        itemResponseQueue.splice(responseIndex, 1);
+
+        // Remove the request from queue now that we got response
+        const queueIndex = itemRequestQueue.findIndex(r => r.requestId === requestId);
+        if (queueIndex !== -1) {
+          itemRequestQueue.splice(queueIndex, 1);
+        }
+
+        return {
+          success: response.success,
+          playerName: response.playerName,
+          itemId: response.itemId,
+          quantity: response.quantity
+        };
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Timeout - remove from queue
+    const queueIndex = itemRequestQueue.findIndex(r => r.requestId === requestId);
+    if (queueIndex !== -1) {
+      itemRequestQueue.splice(queueIndex, 1);
+      logger.debug(`[ITEMS] Removed timed out request ${requestId} from queue`);
+    }
+    logger.warn(`[ITEMS] Timeout waiting for item give response for ${playerId}`);
+    return { success: false, error: 'Timeout waiting for response' };
+
+  } catch (error: any) {
+    logger.error(`[ITEMS] Failed to give item: ${error.message}`);
+    return { success: false, error: error.message };
   }
 }
 
