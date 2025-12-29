@@ -397,6 +397,15 @@ async function sendChatEvent(chatData: any) {
       }
     }
 
+    // If player not in cache, trigger refresh and skip this event
+    // This prevents sending invalid gameId (player name) to Takaro
+    if (!player) {
+      logger.warn(`Player ${chatData.playerName} not in cache yet, skipping chat event. Triggering player refresh.`);
+      // Trigger immediate player list refresh to update cache
+      handleGetPlayers().catch(err => logger.error(`Error refreshing players: ${err.message}`));
+      return;
+    }
+
     // Map Palworld categories to ChatChannel enum - must match exact enum values
     // 1 = Say, 2 = Guild, 3 = Global
     const category = Number(chatData.category);
@@ -409,13 +418,10 @@ async function sendChatEvent(chatData: any) {
         data: {
           type: 'chat-message',
           msg: chatData.message,
-          player: player ? {
+          player: {
             name: player.name,
             gameId: player.gameId,
             steamId: player.steamId
-          } : {
-            name: chatData.playerName,
-            gameId: chatData.playerName // Fallback if player not in cache yet
           },
           channel: channel
         }
