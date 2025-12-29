@@ -149,16 +149,17 @@
 </head>
 <body>
     <div class="container">
-        <h1>Palworld-Takaro Bridge <span style="font-size: 0.6em; color: #a0a0a0;">v1.4.0</span></h1>
+        <h1>Palworld-Takaro Bridge <span style="font-size: 0.6em; color: #a0a0a0;">v1.5.0</span></h1>
         <p style="font-size: 1.2em; margin-bottom: 30px;">Connect your Palworld dedicated server to Takaro for Discord integration, player management, and server control.</p>
 
         <div class="note">
-            <strong>What's New in v1.4.0:</strong>
+            <strong>What's New in v1.5.0:</strong>
             <ul style="margin-left: 20px; margin-top: 10px;">
-                <li><strong>Location Command Enhancement</strong> - Now supports player names (case-insensitive), not just Steam IDs</li>
-                <li><strong>Reduced Logging</strong> - Silent polling, only shows errors and actual activity</li>
-                <li><strong>Stability Fixes</strong> - Fixed deep_discovery.lua nullptr errors</li>
-                <li><strong>Teleport Improvements</strong> - Enhanced coordinate and player-to-player teleport system</li>
+                <li><strong>CRITICAL FIX: PlayerState Handling</strong> - Fixed intermittent invalid PlayerState causing location timeouts and teleport failures. Now uses direct property access with pcall protection.</li>
+                <li><strong>CRITICAL FIX: Player Name Consistency</strong> - Palworld API returns inconsistent names (character vs account name). Bridge now auto-corrects using authoritative UE4SS responses.</li>
+                <li><strong>Teleport System Fixed</strong> - <code>!visit</code> command now works reliably for all players, even when PlayerState validation fails</li>
+                <li><strong>Location Lookup Fixed</strong> - No more timeouts for valid online players. Handles all player states correctly.</li>
+                <li><strong>Auto Log Cleanup</strong> - Bridge keeps only 10 most recent log files to prevent disk bloat</li>
             </ul>
         </div>
 
