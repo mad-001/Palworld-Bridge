@@ -149,16 +149,25 @@
 </head>
 <body>
     <div class="container">
-        <h1>Palworld-Takaro Bridge <span style="font-size: 0.6em; color: #a0a0a0;">v1.5.0</span></h1>
+        <h1>Palworld-Takaro Bridge <span style="font-size: 0.6em; color: #a0a0a0;">v1.5.1</span></h1>
         <p style="font-size: 1.2em; margin-bottom: 30px;">Connect your Palworld dedicated server to Takaro for Discord integration, player management, and server control.</p>
 
         <div class="note">
-            <strong>What's New in v1.5.0:</strong>
+            <strong>What's New in v1.5.1:</strong>
             <ul style="margin-left: 20px; margin-top: 10px;">
-                <li><strong>CRITICAL FIX: PlayerState Handling</strong> - Fixed intermittent invalid PlayerState causing location timeouts and teleport failures. Now uses direct property access with pcall protection.</li>
-                <li><strong>CRITICAL FIX: Player Name Consistency</strong> - Palworld API returns inconsistent names (character vs account name). Bridge now auto-corrects using authoritative UE4SS responses.</li>
-                <li><strong>Teleport System Fixed</strong> - <code>!visit</code> command now works reliably for all players, even when PlayerState validation fails</li>
-                <li><strong>Location Lookup Fixed</strong> - No more timeouts for valid online players. Handles all player states correctly.</li>
+                <li><strong>CRITICAL FIX: Chat Event Handling</strong> - Fixed "Internal error handling game event" errors from Takaro when processing chat messages</li>
+                <li><strong>Player Cache Validation</strong> - Chat events now properly validate player is in cache before sending to Takaro</li>
+                <li><strong>Prevented Invalid Data</strong> - Removed fallback code that sent player names as gameId instead of Steam IDs</li>
+                <li><strong>Auto Cache Refresh</strong> - Triggers immediate player list refresh when cache miss occurs during chat events</li>
+            </ul>
+        </div>
+
+        <div class="note" style="margin-top: 15px; background: rgba(167, 139, 250, 0.1); border-left-color: #a78bfa;">
+            <strong>Previous Release - v1.5.0:</strong>
+            <ul style="margin-left: 20px; margin-top: 10px;">
+                <li><strong>PlayerState Handling</strong> - Fixed intermittent invalid PlayerState causing location timeouts and teleport failures</li>
+                <li><strong>Player Name Consistency</strong> - Bridge now auto-corrects inconsistent names using authoritative UE4SS responses</li>
+                <li><strong>Teleport System</strong> - <code>!visit</code> command now works reliably for all players</li>
                 <li><strong>Auto Log Cleanup</strong> - Bridge keeps only 10 most recent log files to prevent disk bloat</li>
             </ul>
         </div>
