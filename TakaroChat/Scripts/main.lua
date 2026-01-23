@@ -45,6 +45,10 @@ Items.Initialize()
 local Inventory = require("inventory")
 Inventory.Initialize()
 
+-- Guild data tracking (DISABLED - unable to get guild info, causes crashes)
+-- local Guild = require("guild")
+-- Guild.Initialize()
+
 -- Status summary
 print("")
 print("==========================")
@@ -57,6 +61,7 @@ print("  Teleport: Enabled (coordinate + player-to-player)")
 print("  Location Lookup: Enabled (full X/Y/Z coordinates)")
 print("  Item Giving: Enabled (via bridge API)")
 print("  Inventory Tracking: " .. (config.EnableInventoryTracking and "Enabled" or "Disabled"))
+print("  Guild Tracking: Disabled (unable to retrieve)")
 print("==========================")
 print("")
 

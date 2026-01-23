@@ -28,7 +28,7 @@ local function SendInventoryToBridge(playerName, inventoryData)
 
     local jsonEscaped = json:gsub('"', '\\"')
     local curlCommand = string.format(
-        'curl -s -m 3 -X POST -H "Content-Type: application/json" -d "%s" http://%s',
+        'curl -s -m 3 -X POST -H "Content-Type: application/json" -d "%s" http://%s/chat',
         jsonEscaped,
         bridgeHost
     )
@@ -61,13 +61,60 @@ local function UpdatePlayerInventories()
                 if playerState and playerState:IsValid() then
                     local playerName = playerState.PlayerNamePrivate:ToString()
 
-                    -- Use PlayerState:GetInventoryData() - the correct approach!
-                    local inventoryData = playerState:GetInventoryData()
+                    -- Discover PlayerState properties
+                    local PlayerStateClass = playerState:GetClass()
+                    if PlayerStateClass and PlayerStateClass:IsValid() then
+                        PlayerStateClass:ForEachProperty(function(Property)
+                            local propName = Property:GetFName():ToString()
+                            if propName:lower():find("inventory") then
+                                logger:log(3, string.format("[INVENTORY] Found inventory-related property on PlayerState: %s (type: %s)",
+                                    propName, Property:GetClass():GetFName():ToString()))
+                            end
+                        end)
+                    end
+
+                    -- Try to get inventory data
+                    local inventoryData = nil
+                    local invSuccess, invResult = pcall(function() return playerState:GetInventoryData() end)
+                    if invSuccess and invResult and invResult:IsValid() then
+                        inventoryData = invResult
+                        logger:log(3, string.format("[INVENTORY] Got inventory data for %s via GetInventoryData()", playerName))
+                    else
+                        -- Try direct property access as fallback
+                        local propSuccess, propResult = pcall(function() return playerState.InventoryData end)
+                        if propSuccess and propResult and propResult:IsValid() then
+                            inventoryData = propResult
+                            logger:log(3, string.format("[INVENTORY] Got inventory data for %s via InventoryData property", playerName))
+                        end
+                    end
+
                     if inventoryData and inventoryData:IsValid() then
                         local items = {}
 
+                        -- Discover inventory data structure
+                        local InventoryDataClass = inventoryData:GetClass()
+                        if InventoryDataClass and InventoryDataClass:IsValid() then
+                            logger:log(3, string.format("[INVENTORY] Discovering InventoryData properties for %s...", playerName))
+                            InventoryDataClass:ForEachProperty(function(Property)
+                                local propName = Property:GetFName():ToString()
+                                logger:log(3, string.format("[INVENTORY] InventoryData property: %s (type: %s)",
+                                    propName, Property:GetClass():GetFName():ToString()))
+                            end)
+                        end
+
                         -- Access inventory containers
-                        local containers = inventoryData.InventoryMultiHelper.Containers
+                        local containers = nil
+                        local contSuccess, contResult = pcall(function() return inventoryData.InventoryMultiHelper.Containers end)
+                        if contSuccess and contResult then
+                            containers = contResult
+                        else
+                            -- Try alternative paths
+                            local altSuccess, altResult = pcall(function() return inventoryData.Containers end)
+                            if altSuccess and altResult then
+                                containers = altResult
+                            end
+                        end
+
                         if containers then
                             -- Iterate through containers (0 = main inventory, 1+ = other slots)
                             for containerIdx = 0, 10 do

@@ -1,4 +1,8 @@
 node_modules/
 *.log
 dist/
+logs/
 ProjectsToReference/
+*.tar.gz
+*.md.backup
+nul

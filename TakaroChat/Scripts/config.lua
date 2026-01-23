@@ -18,7 +18,7 @@ config.DiscordMessageFormat = "[Discord] {name}: {message}"
 -- Logging Settings
 config.EnableLogging = true
 config.LogFile = "TakaroChat.log"
-config.LogLevel = 2 -- 1=Errors only, 2=Info, 3=Debug
+config.LogLevel = 3 -- 1=Errors only, 2=Info, 3=Debug
 
 -- Message Filtering
 config.BlacklistedPrefixes = {"/"} -- Don't send / commands (allow ! for Takaro)

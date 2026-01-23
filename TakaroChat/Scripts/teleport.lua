@@ -40,46 +40,70 @@ local function ProcessTeleports()
         end
 
         for _, player in ipairs(players) do
-            if player and player:IsValid() then
-                -- Use direct property access with pcall protection
-                local success, playerName = pcall(function() return player.PlayerState.PlayerNamePrivate:ToString() end)
-                if not success or not playerName then
-                    goto continue
+            -- ATOMIC EXTRACTION: Get all data in one tight operation
+            -- This minimizes the race condition window to a few CPU cycles
+            local playerData = nil
+            local extractSuccess = pcall(function()
+                -- All validations and extractions happen atomically here
+                if player and player:IsValid() and
+                   player.PlayerState and player.PlayerState:IsValid() and
+                   player.PlayerState.PlayerNamePrivate then
+                    playerData = {
+                        name = player.PlayerState.PlayerNamePrivate:ToString(),
+                        ref = player  -- Store reference only after validation
+                    }
                 end
+            end)
 
-                -- Check if this player has pending teleport
-                for i = #teleportQueue, 1, -1 do
-                    local teleport = teleportQueue[i]
-                    if teleport.playerName == playerName then
-                        -- Create FVector for new location
-                        local NewLocation = {
-                            X = teleport.x,
-                            Y = teleport.y,
-                            Z = teleport.z
-                        }
-
-                        -- Create FRotator (default rotation)
-                        local NewRotation = {
-                            Pitch = 0,
-                            Yaw = 0,
-                            Roll = 0
-                        }
-
-                        -- Teleport using PalUtility (exact AdminEngine pattern)
-                        local palUtil = GetPalUtil()
-                        if palUtil and palUtil:IsValid() then
-                            palUtil:Teleport(player, NewLocation, NewRotation, true, false)
-                            logger:log(2, string.format("Teleported %s to (%.1f, %.1f, %.1f)", playerName, teleport.x, teleport.y, teleport.z))
-                        else
-                            logger:log(1, "Failed to get PalUtility")
-                        end
-
-                        -- Remove from queue
-                        table.remove(teleportQueue, i)
-                    end
-                end
-                ::continue::
+            -- If extraction failed or data is incomplete, skip this player
+            if not extractSuccess or not playerData or not playerData.name then
+                goto continue
             end
+
+            -- Check if this player has pending teleport (match by name)
+            for i = #teleportQueue, 1, -1 do
+                local teleport = teleportQueue[i]
+                if teleport.playerName == playerData.name then
+                    -- Create FVector for new location
+                    local NewLocation = {
+                        X = teleport.x,
+                        Y = teleport.y,
+                        Z = teleport.z
+                    }
+
+                    -- Create FRotator (default rotation)
+                    local NewRotation = {
+                        Pitch = 0,
+                        Yaw = 0,
+                        Roll = 0
+                    }
+
+                    -- Teleport using PalUtility with crash protection
+                    local palUtil = GetPalUtil()
+                    if palUtil and palUtil:IsValid() then
+                        -- Re-validate player right before teleport (final safety check)
+                        local tpSuccess, tpErr = pcall(function()
+                            if playerData.ref and playerData.ref:IsValid() then
+                                palUtil:Teleport(playerData.ref, NewLocation, NewRotation, true, false)
+                            else
+                                error("Player became invalid before teleport")
+                            end
+                        end)
+
+                        if tpSuccess then
+                            logger:log(2, string.format("Teleported %s to (%.1f, %.1f, %.1f)", playerData.name, teleport.x, teleport.y, teleport.z))
+                        else
+                            logger:log(1, string.format("Teleport failed for %s: %s", playerData.name, tostring(tpErr)))
+                        end
+                    else
+                        logger:log(1, string.format("Failed to get PalUtility for %s", playerData.name))
+                    end
+
+                    -- Remove from queue
+                    table.remove(teleportQueue, i)
+                end
+            end
+            ::continue::
         end
     end)
 
@@ -114,41 +138,48 @@ local function FetchTeleportQueue()
         handle:close()
 
         if result and result ~= "" and result ~= '{"teleports":[]}' then
-            -- Parse JSON response for teleports
+            -- Parse JSON response for teleports (now includes Steam IDs)
 
-            -- First, try to match coordinate-based teleports
-            for match in result:gmatch('{[^}]*"sourcePlayer"%s*:%s*"([^"]+)"[^}]*}') do
-                local sourcePlayer = match
-                local x = result:match('"sourcePlayer"%s*:%s*"' .. sourcePlayer .. '"[^}]*"x"%s*:%s*([%d%.%-]+)')
-                local y = result:match('"sourcePlayer"%s*:%s*"' .. sourcePlayer .. '"[^}]*"y"%s*:%s*([%d%.%-]+)')
-                local z = result:match('"sourcePlayer"%s*:%s*"' .. sourcePlayer .. '"[^}]*"z"%s*:%s*([%d%.%-]+)')
-
-                if x and y and z then
-                    logger:log(2, string.format("[TELEPORT] Coordinate teleport: %s -> (%.1f, %.1f, %.1f)", sourcePlayer, tonumber(x), tonumber(y), tonumber(z)))
-                    QueueTeleport(sourcePlayer, tonumber(x), tonumber(y), tonumber(z))
-                end
+            -- First, try to match coordinate-based teleports (JSON order: sourcePlayer, sourceSteamId, x, y, z)
+            for sourcePlayer, sourceSteamId, x, y, z in result:gmatch('"sourcePlayer"%s*:%s*"([^"]+)"%s*,[^}]*"sourceSteamId"%s*:%s*"([^"]+)"%s*,[^}]*"x"%s*:%s*([%d%.%-]+)%s*,[^}]*"y"%s*:%s*([%d%.%-]+)%s*,[^}]*"z"%s*:%s*([%d%.%-]+)') do
+                logger:log(2, string.format("[TELEPORT] Coordinate: %s (Steam: %s) -> (%.1f, %.1f, %.1f)", sourcePlayer, sourceSteamId, tonumber(x), tonumber(y), tonumber(z)))
+                QueueTeleport(sourcePlayer, tonumber(x), tonumber(y), tonumber(z))
             end
 
-            -- Then, match player-to-player teleports
-            for sourcePlayer, targetPlayer in result:gmatch('"sourcePlayer"%s*:%s*"([^"]+)"[^}]*"targetPlayer"%s*:%s*"([^"]+)"') do
-                -- Find target player using AdminEngine pattern
+            -- Then, match player-to-player teleports (JSON order: sourcePlayer, sourceSteamId, targetPlayer, targetSteamId)
+            for sourcePlayer, sourceSteamId, targetPlayer, targetSteamId in result:gmatch('"sourcePlayer"%s*:%s*"([^"]+)"%s*,[^}]*"sourceSteamId"%s*:%s*"([^"]+)"%s*,[^}]*"targetPlayer"%s*:%s*"([^"]+)"%s*,[^}]*"targetSteamId"%s*:%s*"([^"]+)"') do
+                -- Find target player by name
                 local PlayersList = FindAllOf("PalPlayerCharacter")
                 if not PlayersList then
                     logger:log(1, "[TELEPORT] ERROR: FindAllOf returned nil")
                 else
                     local targetFound = false
                     for _, TPlayer in ipairs(PlayersList) do
-                        if TPlayer ~= nil and TPlayer and TPlayer:IsValid() then
-                            -- Use direct property access with pcall (like location.lua fix)
-                            local success, targetName = pcall(function() return TPlayer.PlayerState.PlayerNamePrivate:ToString() end)
-                            if success and targetName and targetName == targetPlayer then
-                                targetFound = true
-                                -- Get location directly from PalPlayerCharacter (AdminEngine line 69)
-                                local location = TPlayer:K2_GetActorLocation()
-                                logger:log(2, string.format("[TELEPORT] %s -> %s at (%.1f, %.1f, %.1f)", sourcePlayer, targetPlayer, location.X, location.Y, location.Z))
-                                QueueTeleport(sourcePlayer, location.X, location.Y, location.Z)
-                                break
+                        -- ATOMIC EXTRACTION: Get name and location in one operation
+                        local targetData = nil
+                        local extractSuccess = pcall(function()
+                            -- Validate everything and extract atomically
+                            if TPlayer and TPlayer:IsValid() and
+                               TPlayer.PlayerState and TPlayer.PlayerState:IsValid() and
+                               TPlayer.PlayerState.PlayerNamePrivate then
+                                local name = TPlayer.PlayerState.PlayerNamePrivate:ToString()
+                                -- Get location immediately while object is still valid
+                                local loc = TPlayer:K2_GetActorLocation()
+                                targetData = {
+                                    name = name,
+                                    location = loc
+                                }
                             end
+                        end)
+
+                        -- Check if extraction succeeded and name matches
+                        if extractSuccess and targetData and targetData.name == targetPlayer and targetData.location then
+                            targetFound = true
+                            logger:log(2, string.format("[TELEPORT] %s (Steam: %s) -> %s at (%.1f, %.1f, %.1f)",
+                                sourcePlayer, sourceSteamId, targetPlayer,
+                                targetData.location.X, targetData.location.Y, targetData.location.Z))
+                            QueueTeleport(sourcePlayer, targetData.location.X, targetData.location.Y, targetData.location.Z)
+                            break
                         end
                     end
                     if not targetFound then

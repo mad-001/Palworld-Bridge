@@ -10,7 +10,7 @@ import { promisify } from 'util';
 const execPromise = promisify(exec);
 
 // Version
-const VERSION = '1.4.0';
+const VERSION = '1.5.9';
 
 // Load configuration from TakaroConfig.txt
 function loadConfig() {
@@ -161,12 +161,14 @@ const playerInventories = new Map<string, PlayerInventory>();
 // Track online players to detect connect/disconnect
 let lastKnownPlayers = new Set<string>();
 let hasInitializedPlayerList = false; // Track if we've done first poll
-const playerCache = new Map<string, { gameId: string; name: string; steamId: string }>();
+const playerCache = new Map<string, { gameId: string; name: string; accountName: string; steamId: string; palworldPlayerId: string }>();
 
 // Teleport queue for pending teleports
 interface TeleportRequest {
   sourcePlayer: string;
+  sourceSteamId: string;  // Added for reliable player matching
   targetPlayer?: string;  // Optional - used for player-to-player
+  targetSteamId?: string; // Added for reliable player matching
   x?: number;             // Optional - used for coordinate teleport
   y?: number;
   z?: number;
@@ -176,12 +178,12 @@ const teleportQueue: TeleportRequest[] = [];
 
 // Location queue for getting player positions
 interface LocationRequest {
-  playerName: string;
+  name: string; // Player display name from API - matches PlayerNamePrivate in Lua
   requestId: string;
   timestamp: string;
 }
 interface LocationResponse {
-  playerName: string;
+  name: string;
   requestId: string;
   x: number;
   y: number;
@@ -339,18 +341,7 @@ app.post('/location-response', (req, res) => {
   try {
     const response: LocationResponse = req.body;
     locationResponseQueue.push(response);
-    logger.info(`[LOCATION] Received response for ${response.playerName}: (${response.x}, ${response.y}, ${response.z})`);
-
-    // Update player cache with authoritative name from UE4SS (what PlayerNamePrivate actually shows)
-    // This corrects cases where Palworld API returns inconsistent names
-    const steamId = playerNameToSteamId.get(response.playerName);
-    if (steamId) {
-      const cachedPlayer = playerCache.get(steamId);
-      if (cachedPlayer && cachedPlayer.name !== response.playerName) {
-        playerCache.set(steamId, { ...cachedPlayer, name: response.playerName });
-        logger.info(`[LOCATION] Updated cached name for ${steamId}: "${cachedPlayer.name}" -> "${response.playerName}"`);
-      }
-    }
+    logger.debug(`[LOCATION] Received response for ${response.name}: (${response.x}, ${response.y}, ${response.z})`);
 
     res.status(200).json({ success: true });
   } catch (error: any) {
@@ -379,6 +370,27 @@ app.post('/item-response', (req, res) => {
     res.status(200).json({ success: true });
   } catch (error: any) {
     logger.error(`Item response endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Guild data endpoint (Lua posts guild data here)
+app.post('/guild-data', (req, res) => {
+  try {
+    const { guilds, timestamp } = req.body;
+    logger.info(`[GUILD] Received guild data: ${guilds.length} guilds at ${timestamp}`);
+
+    // Log guild details
+    guilds.forEach((guild: any) => {
+      logger.info(`[GUILD]   - ${guild.guild_name} (ID: ${guild.guild_id}, Admin: ${guild.admin_player_uid}, Members: ${guild.member_count})`);
+    });
+
+    // TODO: Send guild data to Takaro via WebSocket or store for later use
+    // For now, just log it
+
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    logger.error(`Guild data endpoint error: ${error.message}`);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -737,6 +749,25 @@ async function handleTakaroRequest(message: any) {
 /**
  * Check if Palworld server process is running and update flag
  */
+/**
+ * Clear all cached state when server restarts
+ * This prevents stale data from causing crashes after server restart
+ */
+function clearBridgeState() {
+  logger.info('[STATE RESET] Clearing bridge state due to server restart');
+
+  // Clear player caches
+  playerCache.clear();
+  playerInventories.clear();
+  playerNameToSteamId.clear();
+
+  // Clear pending requests
+  teleportQueue.length = 0;
+  activeLocationRequests.clear();
+
+  logger.info('[STATE RESET] Bridge state cleared successfully');
+}
+
 async function checkServerStatus() {
   try {
     const { stdout } = await execPromise('tasklist /FI "IMAGENAME eq PalServer-Win64-Shipping-Cmd.exe" /NH');
@@ -746,6 +777,11 @@ async function checkServerStatus() {
 
     if (isServerRunning !== wasRunning) {
       logger.info(`Palworld server status changed: ${isServerRunning ? 'ONLINE' : 'OFFLINE'}`);
+
+      // If server just came back online after being offline, clear stale state
+      if (isServerRunning && !wasRunning) {
+        clearBridgeState();
+      }
     }
   } catch (error: any) {
     logger.error(`Failed to check Palworld server process: ${error.message}`);
@@ -790,9 +826,11 @@ async function handleGetPlayers(detectChanges: boolean = false) {
 
     const mappedPlayers = players.map((player: any) => ({
       gameId: String(player.userId),
-      name: String(player.name), // Use character name (what UE4SS PlayerNamePrivate:ToString() returns)
+      name: String(player.name), // Character name (for Takaro)
+      accountName: String(player.accountName || player.name), // Steam account name (for Lua - what PlayerNamePrivate returns)
       platformId: `palworld:${player.userId}`,
       steamId: String(player.userId),
+      palworldPlayerId: String(player.playerId || ''), // GUID from Palworld API - matches PlayerState.PlayerId in UE4SS
       ip: player.ip || undefined,
       ping: player.ping !== undefined ? player.ping : undefined,
       positionX: player.location_x !== undefined ? player.location_x : (player.x !== undefined ? player.x : undefined),
@@ -800,9 +838,9 @@ async function handleGetPlayers(detectChanges: boolean = false) {
       positionZ: player.location_z !== undefined ? player.location_z : (player.z !== undefined ? player.z : undefined)
     }));
 
-    // Always cache player data
+    // Always cache player data (including accountName for Lua communication and palworldPlayerId for matching)
     for (const player of mappedPlayers) {
-      playerCache.set(player.gameId, { gameId: player.gameId, name: player.name, steamId: player.steamId });
+      playerCache.set(player.gameId, { gameId: player.gameId, name: player.name, accountName: player.accountName, steamId: player.steamId, palworldPlayerId: player.palworldPlayerId });
     }
 
     // Only detect connect/disconnect during polling interval (not on Takaro's frequent getPlayers requests)
@@ -964,25 +1002,20 @@ async function handleGetPlayerLocation(args: any) {
       return { x: 0, y: 0, z: 0 };
     }
 
-    const playerName = cachedPlayer.name;
-
     // Mark request as active
     activeLocationRequests.add(playerId);
 
     // Generate unique request ID
     const requestId = `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Queue location request for Lua to process (using display name)
+    // Queue location request for Lua to process (using name)
     locationRequestQueue.push({
-      playerName: playerName,
+      name: cachedPlayer.name,
       requestId,
       timestamp: new Date().toISOString()
     });
 
-    // Track playerName -> steamId mapping for cache updates
-    playerNameToSteamId.set(playerName, playerId);
-
-    logger.info(`[LOCATION] Queued request ${requestId} for ${playerName} (${playerId})`);
+    logger.debug(`[LOCATION] Queued request ${requestId} for ${cachedPlayer.name} (${playerId})`);
 
     // Wait for response from Lua (with timeout)
     const timeout = 5000;
@@ -995,7 +1028,7 @@ async function handleGetPlayerLocation(args: any) {
         const response = locationResponseQueue[responseIndex];
         locationResponseQueue.splice(responseIndex, 1);
 
-        logger.info(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
+        logger.debug(`[LOCATION] Got response for ${playerId}: (${response.x}, ${response.y}, ${response.z})`);
 
         // Remove from active requests
         activeLocationRequests.delete(playerId);
@@ -1102,12 +1135,12 @@ async function handleGiveItem(args: any) {
       return { success: false, error: 'Player not found' };
     }
 
-    const playerName = player.name;
+    const playerName = player.accountName; // Use accountName for Lua
 
     // Generate unique request ID
     const requestId = `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Queue item request for Lua to process
+    // Queue item request for Lua to process (using accountName)
     itemRequestQueue.push({
       playerName,
       itemId,
@@ -1116,7 +1149,7 @@ async function handleGiveItem(args: any) {
       timestamp: new Date().toISOString()
     });
 
-    logger.info(`[ITEMS] Queued request ${requestId}: Give ${quantity}x ${itemId} to ${playerName}`);
+    logger.info(`[ITEMS] Queued request ${requestId}: Give ${quantity}x ${itemId} to ${player.name}`);
 
     // Wait for response from Lua (with timeout)
     const timeout = 5000;
@@ -1200,7 +1233,8 @@ async function handleTeleportPlayer(args: any) {
     // Handle coordinate teleport
     if (isCoordinateTeleport) {
       teleportQueue.push({
-        sourcePlayer: source.name,
+        sourcePlayer: source.name, // Use display name for Lua
+        sourceSteamId: source.gameId, // Steam ID for reliable matching
         x,
         y,
         z,
@@ -1225,10 +1259,12 @@ async function handleTeleportPlayer(args: any) {
       return { success: false, error: `Target player "${targetPlayer}" not found online` };
     }
 
-    // Add to teleport queue - Lua mod will look up target's position in-game
+    // Add to teleport queue - Lua mod will look up target's position in-game (include Steam IDs)
     teleportQueue.push({
-      sourcePlayer: source.name,
-      targetPlayer: target.name,
+      sourcePlayer: source.name, // Use display name for Lua
+      sourceSteamId: source.gameId, // Steam ID for reliable matching
+      targetPlayer: target.name, // Use display name for Lua
+      targetSteamId: target.gameId, // Steam ID for reliable matching
       timestamp: new Date().toISOString()
     });
 
@@ -1376,8 +1412,25 @@ async function handleExecuteCommand(args: any) {
 
     case 'shutdown':
       try {
-        const waittime = parseInt(cmdArguments[0]) || 10;
-        const shutdownMsg = cmdArguments.slice(1).join(' ') || 'Server shutting down';
+        let waittime = 10;
+        let shutdownMsg = 'Server shutting down';
+
+        // Check if first argument is a number
+        if (cmdArguments.length > 0) {
+          const parsedTime = parseInt(cmdArguments[0]);
+          if (!isNaN(parsedTime)) {
+            // First arg is a number, use it as waittime
+            waittime = parsedTime;
+            // Everything after is the message
+            if (cmdArguments.length > 1) {
+              shutdownMsg = cmdArguments.slice(1).join(' ');
+            }
+          } else {
+            // First arg is NOT a number, all args are the message
+            shutdownMsg = cmdArguments.join(' ');
+          }
+        }
+
         const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
         const data = JSON.stringify({ waittime, message: shutdownMsg });
         const config = {
@@ -1392,7 +1445,7 @@ async function handleExecuteCommand(args: any) {
         };
         await axios(config);
         logger.info('Server shutdown initiated');
-        return { success: true, rawResult: `Server shutting down in ${waittime} seconds` };
+        return { success: true, rawResult: `Server shutting down in ${waittime} seconds: "${shutdownMsg}"` };
       } catch (error: any) {
         logger.error(`Failed to shutdown server: ${error.message}`);
         return { success: false, rawResult: `Error: ${error.message}` };

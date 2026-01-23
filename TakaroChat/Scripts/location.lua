@@ -33,7 +33,7 @@ local function FetchLocationRequests()
 
         if result and result ~= "" and result ~= '{"requests":[]}' then
             -- Parse JSON response for location requests
-            for playerName, requestId in result:gmatch('"playerName"%s*:%s*"([^"]+)"%s*,[^}]*"requestId"%s*:%s*"([^"]+)"') do
+            for playerName, requestId in result:gmatch('"name"%s*:%s*"([^"]+)"%s*,[^}]*"requestId"%s*:%s*"([^"]+)"') do
                 logger:log(2, string.format("[LOCATION] Processing request %s for player %s", requestId, playerName))
 
                 -- Find the player
@@ -64,57 +64,88 @@ local function FetchLocationRequests()
                     -- Find the player (use direct access like teleport.lua)
                     local playerFound = false
                     for _, Player in ipairs(PlayersList) do
-                        if Player ~= nil and Player and Player:IsValid() then
-                            -- Direct property access like AdminEngine/teleport
-                            local success, currentName = pcall(function() return Player.PlayerState.PlayerNamePrivate:ToString() end)
-                            if success and currentName and currentName == playerName then
-                                    playerFound = true
-
-                                    -- Get player location using K2_GetActorLocation (same as teleport)
-                                    local location = Player:K2_GetActorLocation()
-
-                                    -- Send location back to bridge using curl
-                                    local json = string.format(
-                                        '{"requestId":"%s","playerName":"%s","x":%.2f,"y":%.2f,"z":%.2f,"timestamp":"%s"}',
-                                        requestId,
-                                        playerName,
-                                        location.X,
-                                        location.Y,
-                                        location.Z,
-                                        os.date("!%Y-%m-%dT%H:%M:%SZ")
-                                    )
-
-                                    -- Escape double quotes for curl (need to use \" in Windows)
-                                    local jsonEscaped = json:gsub('"', '\\"')
-
-                                    -- Use curl with timeout for reliable JSON POST
-                                    local curlCommand = string.format(
-                                        'curl -s -m 3 -X POST -H "Content-Type: application/json" -d "%s" http://%s/location-response',
-                                        jsonEscaped,
-                                        bridgeHost
-                                    )
-
-                                    -- Execute synchronously and capture result
-                                    local handle = io.popen(curlCommand .. ' 2>&1')
-                                    if handle then
-                                        local result = handle:read("*a")
-                                        local success = handle:close()
-
-                                        if success and result:match('"success"%s*:%s*true') then
-                                            logger:log(2, string.format("[LOCATION] Sent response for %s: (%.1f, %.1f, %.1f)", playerName, location.X, location.Y, location.Z))
-                                        else
-                                            logger:log(1, string.format("[LOCATION] Failed to send response for %s: %s", playerName, result))
-                                        end
-                                    else
-                                        logger:log(1, string.format("[LOCATION] Failed to execute curl for %s", playerName))
-                                    end
-                                    break
+                        -- ATOMIC EXTRACTION: Get name and location in one operation to prevent crashes
+                        local playerData = nil
+                        local extractSuccess = pcall(function()
+                            if Player and Player:IsValid() and
+                               Player.PlayerState and Player.PlayerState:IsValid() and
+                               Player.PlayerState.PlayerNamePrivate then
+                                local name = Player.PlayerState.PlayerNamePrivate:ToString()
+                                -- Get location immediately while object is still valid
+                                local loc = Player:K2_GetActorLocation()
+                                if loc then
+                                    playerData = {
+                                        name = name,
+                                        location = loc
+                                    }
                                 end
+                            end
+                        end)
+
+                        -- Check if extraction succeeded and name matches (case-insensitive)
+                        if extractSuccess and playerData and playerData.name and playerData.name:lower() == playerName:lower() then
+                            playerFound = true
+
+                            -- Send location back to bridge using curl
+                            local json = string.format(
+                                '{"requestId":"%s","name":"%s","x":%.2f,"y":%.2f,"z":%.2f,"timestamp":"%s"}',
+                                requestId,
+                                playerName,
+                                playerData.location.X,
+                                playerData.location.Y,
+                                playerData.location.Z,
+                                os.date("!%Y-%m-%dT%H:%M:%SZ")
+                            )
+
+                            -- Escape double quotes for curl (need to use \" in Windows)
+                            local jsonEscaped = json:gsub('"', '\\"')
+
+                            -- Use curl with timeout for reliable JSON POST
+                            local curlCommand = string.format(
+                                'curl -s -m 3 -X POST -H "Content-Type: application/json" -d "%s" http://%s/location-response',
+                                jsonEscaped,
+                                bridgeHost
+                            )
+
+                            -- Execute synchronously and capture result
+                            local handle = io.popen(curlCommand .. ' 2>&1')
+                            if handle then
+                                local result = handle:read("*a")
+                                local success = handle:close()
+
+                                if success and result:match('"success"%s*:%s*true') then
+                                    logger:log(2, string.format("[LOCATION] Sent response for %s: (%.1f, %.1f, %.1f)", playerName, playerData.location.X, playerData.location.Y, playerData.location.Z))
+                                else
+                                    logger:log(1, string.format("[LOCATION] Failed to send response for %s: %s", playerName, result))
+                                end
+                            else
+                                logger:log(1, string.format("[LOCATION] Failed to execute curl for %s", playerName))
+                            end
+                            break
                         end
                     end
 
                     if not playerFound then
                         logger:log(1, string.format("[LOCATION] ERROR: Player '%s' not found online", playerName))
+
+                        -- Send error response to bridge to clear the stuck request
+                        local json = string.format(
+                            '{"requestId":"%s","name":"%s","x":0,"y":0,"z":0,"timestamp":"%s"}',
+                            requestId,
+                            playerName,
+                            os.date("!%Y-%m-%dT%H:%M:%SZ")
+                        )
+                        local jsonEscaped = json:gsub('"', '\\"')
+                        local curlCommand = string.format(
+                            'curl -s -m 3 -X POST -H "Content-Type: application/json" -d "%s" http://%s/location-response',
+                            jsonEscaped,
+                            bridgeHost
+                        )
+                        local handle = io.popen(curlCommand .. ' 2>&1')
+                        if handle then
+                            handle:read("*a")
+                            handle:close()
+                        end
                     end
                 end
             end
