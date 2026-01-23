@@ -240,38 +240,35 @@ pm2 start dist/index.js --name palworld-bridge</code></pre>
         <h3>Prerequisites</h3>
         <ul>
             <li>Bridge must be running (see above)</li>
-            <li>Download <a href="https://github.com/UE4SS-RE/RE-UE4SS/releases">UE4SS v3.0.0+</a></li>
+            <li>Download <a href="https://github.com/Okaetsu/RE-UE4SS/releases/tag/experimental-palworld">UE4SS Palworld Experimental</a> (required for Palworld 0.4.1.5+)</li>
         </ul>
+
+        <div class="warning-box">
+            <strong>Important:</strong> Palworld 0.4.1.5+ requires the Palworld-specific experimental UE4SS from Okaetsu's fork. The standard UE4SS will NOT work due to engine changes.
+        </div>
 
         <h3>1. Install UE4SS</h3>
         <ol>
-            <li>Download latest <code>UE4SS_v3.x.x.zip</code></li>
-            <li>Extract and copy to <code>PalServer\Pal\Binaries\Win64\</code>:
-                <ul>
-                    <li><code>dwmapi.dll</code></li>
-                    <li><code>UE4SS.dll</code></li>
-                    <li><code>UE4SS-settings.ini</code></li>
-                    <li><code>Mods\</code> folder</li>
-                </ul>
-            </li>
-            <li>If Windows blocks the DLL: Right-click <code>dwmapi.dll</code> → Properties → Unblock</li>
+            <li>Download <code>UE4SS-Palworld.zip</code> from <a href="https://github.com/Okaetsu/RE-UE4SS/releases/tag/experimental-palworld">experimental-palworld release</a></li>
+            <li>Extract entire <code>ue4ss</code> folder to <code>PalServer\Pal\Binaries\Win64\</code></li>
+            <li>If Windows blocks files: Right-click → Properties → Unblock → Apply</li>
         </ol>
 
         <h3>2. Install TakaroChat Mod</h3>
         <p>Copy <code>TakaroChat</code> folder from bridge repository to:</p>
-        <pre><code>PalServer\Pal\Binaries\Win64\Mods\TakaroChat\</code></pre>
+        <pre><code>PalServer\Pal\Binaries\Win64\ue4ss\Mods\TakaroChat\</code></pre>
 
         <p>Final structure:</p>
         <pre><code>PalServer\Pal\Binaries\Win64\
-├── dwmapi.dll
-├── UE4SS.dll
-├── UE4SS-settings.ini
-└── Mods\
-    └── TakaroChat\
-        ├── enabled.txt
-        └── Scripts\
-            ├── main.lua
-            └── config.lua</code></pre>
+└── ue4ss\
+    ├── UE4SS.dll
+    ├── UE4SS-settings.ini
+    └── Mods\
+        └── TakaroChat\
+            ├── enabled.txt
+            └── Scripts\
+                ├── main.lua
+                └── config.lua</code></pre>
 
         <h3>3. Configure TakaroChat</h3>
         <p>Edit <code>TakaroChat/Scripts/config.lua</code>:</p>
