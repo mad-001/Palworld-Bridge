@@ -116,12 +116,12 @@ The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Taka
    Edit `TakaroChat/Scripts/config.lua`:
    ```lua
    -- Bridge Connection
-   config.BridgeHost = "127.0.0.1"  -- Bridge IP (same machine)
-   config.BridgePort = 3000          -- Bridge port (default 3000)
+   config.BridgeURL = "http://localhost:3001/chat"  -- Bridge endpoint (default 3001)
+   config.EnableBridge = true
 
-   -- Chat Settings
-   config.EnableChatForwarding = true
-   config.CaptureCategories = {1, 2, 3}  -- Say, Guild, Global
+   -- Chat Categories (Palworld chat types)
+   -- 1 = Say (local), 2 = Guild, 3 = Global
+   config.SendCategories = {1, 2, 3}  -- Which categories to send
    ```
 
 4. **Restart Palworld Server**
@@ -145,7 +145,7 @@ The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Taka
 
 **Chat not appearing in Discord:**
 - Check bridge logs for connection from UE4SS mod
-- Verify `config.BridgePort` matches bridge's HTTP server port
+- Verify `config.BridgeURL` uses correct port (default: `http://localhost:3001/chat`)
 - Ensure chat forwarding module is installed in Takaro
 
 **Mod not loading:**

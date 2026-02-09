@@ -273,12 +273,12 @@ pm2 start dist/index.js --name palworld-bridge</code></pre>
         <h3>3. Configure TakaroChat</h3>
         <p>Edit <code>TakaroChat/Scripts/config.lua</code>:</p>
         <pre><code>-- Bridge Connection
-config.BridgeHost = "127.0.0.1"  -- IP where bridge runs
-config.BridgePort = 3000          -- Bridge HTTP port (default 3000)
+config.BridgeURL = "http://localhost:3001/chat"  -- Bridge endpoint (default 3001)
+config.EnableBridge = true
 
--- Chat Settings
-config.EnableChatForwarding = true
-config.CaptureCategories = {1, 2, 3}  -- 1=Say, 2=Guild, 3=Global</code></pre>
+-- Chat Categories (Palworld chat types)
+-- 1 = Say (local), 2 = Guild, 3 = Global
+config.SendCategories = {1, 2, 3}  -- Which categories to send</code></pre>
 
         <h3>4. Restart Palworld Server</h3>
         <p>Stop and start your server. UE4SS and TakaroChat will load automatically.</p>
@@ -344,7 +344,7 @@ config.CaptureCategories = {1, 2, 3}  -- 1=Say, 2=Guild, 3=Global</code></pre>
             <strong>Chat not appearing in Discord:</strong>
             <ul>
                 <li>Check bridge logs for incoming chat messages from mod</li>
-                <li>Verify <code>config.BridgePort</code> matches bridge HTTP port (default 3000)</li>
+                <li>Verify <code>config.BridgeURL</code> uses correct port (default: <code>http://localhost:3001/chat</code>)</li>
                 <li>Ensure Takaro has chat forwarding configured</li>
                 <li>Confirm TakaroChat mod is enabled: check <code>enabled.txt</code> exists</li>
             </ul>
