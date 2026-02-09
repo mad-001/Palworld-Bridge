@@ -120,7 +120,7 @@ setInterval(() => {
 }, 60000); // Check every minute
 
 // Configuration
-const TAKARO_WS_URL = process.env.TAKARO_WS_URL || 'wss://connect.next.takaro.dev/';
+const TAKARO_WS_URL = process.env.TAKARO_WS_URL || 'wss://connect.takaro.io/';
 const IDENTITY_TOKEN = process.env.IDENTITY_TOKEN || '';
 const REGISTRATION_TOKEN = process.env.REGISTRATION_TOKEN || '';
 
