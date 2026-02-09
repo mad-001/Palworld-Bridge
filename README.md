@@ -94,21 +94,21 @@ The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Taka
 
    a. Copy the `TakaroChat` folder from this repository to:
       ```
-      PalServer\Pal\Binaries\Win64\Mods\TakaroChat\
+      PalServer\Pal\Binaries\Win64\ue4ss\Mods\TakaroChat\
       ```
 
    b. Your directory structure should look like:
       ```
       PalServer\Pal\Binaries\Win64\
-      ├── dwmapi.dll
-      ├── UE4SS.dll
-      ├── UE4SS-settings.ini
-      └── Mods\
-          └── TakaroChat\
-              ├── enabled.txt
-              └── Scripts\
-                  ├── main.lua
-                  └── config.lua
+      └── ue4ss\
+          ├── UE4SS.dll
+          ├── UE4SS-settings.ini
+          └── Mods\
+              └── TakaroChat\
+                  ├── enabled.txt
+                  └── Scripts\
+                      ├── main.lua
+                      └── config.lua
       ```
 
 3. **Configure TakaroChat**
@@ -139,7 +139,7 @@ The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Taka
 ### Troubleshooting
 
 **UE4SS not loading:**
-- Ensure `dwmapi.dll` is in the correct directory
+- Ensure `dwmapi.dll` is in the `Win64\ue4ss\` directory
 - Check Windows didn't block the DLL (right-click → Properties → Unblock)
 - Verify UE4SS version compatibility (3.0.0+)
 
@@ -149,9 +149,9 @@ The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Taka
 - Ensure chat forwarding module is installed in Takaro
 
 **Mod not loading:**
-- Confirm `enabled.txt` exists in `TakaroChat` folder
-- Check `UE4SS\Mods\mods.txt` includes TakaroChat entry
-- Review UE4SS logs in `UE4SS\UE4SS.log`
+- Confirm `enabled.txt` exists in `ue4ss\Mods\TakaroChat\` folder
+- Check `ue4ss\Mods\mods.txt` includes TakaroChat entry
+- Review UE4SS logs in `ue4ss\UE4SS.log`
 
 See [TakaroChat/README.md](TakaroChat/README.md) for detailed configuration options.
 
