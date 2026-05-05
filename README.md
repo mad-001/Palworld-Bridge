@@ -209,7 +209,7 @@ PALWORLD_PASSWORD=your-admin-password
 
 ### Getting Takaro Tokens
 
-1. Visit [Takaro.io](https://takaro.io)
+1. Visit [Takaro.io](https://takaro.io?via=zach550)
 2. Register your Palworld server
 3. Copy the Identity Token and Registration Token
 4. Add them to `TakaroConfig.txt`
@@ -265,7 +265,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 🔗 Links
 
 - [Documentation](https://mad-001.github.io/Palworld-Bridge/)
-- [Takaro Platform](https://takaro.io)
+- [Takaro Platform](https://takaro.io?via=zach550)
 - [Takaro Documentation](https://docs.takaro.io)
 - [Report Issues](https://github.com/mad-001/Palworld-Bridge/issues)
 
