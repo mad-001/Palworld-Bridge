@@ -1,13 +1,13 @@
 {
   "name": "palworld-bridge",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "main": "index.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build:exe": "npm run build && pkg . --output build/PalworldBridge.exe"
+    "build:exe": "npm run build && esbuild dist/index.js --bundle --platform=node --target=node18 --format=cjs --outfile=build/bundle.cjs && pkg . --output build/PalworldBridge.exe"
   },
   "keywords": [],
   "author": "",
@@ -23,10 +23,11 @@
     "@types/express": "^4.17.21",
     "@types/node": "^25.0.3",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
-  "bin": "dist/index.js",
+  "bin": "build/bundle.cjs",
   "pkg": {
     "assets": [
       "package.json"
