@@ -9,8 +9,24 @@ import { promisify } from 'util';
 
 const execPromise = promisify(exec);
 
-// Version
-const VERSION = '1.5.9';
+// Version (read from package.json so it can never drift from the release)
+function readVersion(): string {
+  const candidates = [
+    path.join(process.cwd(), 'package.json'),
+    path.join(__dirname, '..', 'package.json'),
+    path.join(__dirname, 'package.json'),
+  ];
+  for (const p of candidates) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      if (pkg && typeof pkg.version === 'string') return pkg.version;
+    } catch {
+      // try next candidate
+    }
+  }
+  return '0.0.0';
+}
+const VERSION = readVersion();
 
 // Load configuration from TakaroConfig.txt
 function loadConfig() {
@@ -1780,6 +1796,87 @@ initPalworldApi();
 
 // Start server monitoring (like Astroneer's RCON connection state)
 startServerMonitoring();
+
+// ---------------------------------------------------------------------------
+// Update checker: tell the operator when a newer release is on GitHub.
+// - Prints a banner in the log at startup.
+// - Repeats an in-game announcement every hour while an update is pending.
+// Set ANNOUNCE_UPDATES=false in TakaroConfig.txt to disable the in-game part.
+// ---------------------------------------------------------------------------
+const GITHUB_LATEST_API = 'https://api.github.com/repos/mad-001/Palworld-Bridge/releases/latest';
+const INSTALL_URL = 'https://mad-001.github.io/Palworld-Bridge/#installation';
+const ANNOUNCE_UPDATES = (process.env.ANNOUNCE_UPDATES || 'true').toLowerCase() !== 'false';
+let pendingUpdate: { latest: string } | null = null;
+
+function parseVersion(v: string): number[] {
+  return String(v).replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+}
+
+function isNewer(latest: string, current: string): boolean {
+  const a = parseVersion(latest);
+  const b = parseVersion(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] || 0;
+    const y = b[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
+async function fetchLatestRelease(): Promise<void> {
+  try {
+    const res = await axios.get(GITHUB_LATEST_API, {
+      headers: { 'User-Agent': 'Palworld-Bridge', 'Accept': 'application/vnd.github+json' },
+      timeout: 10000,
+    });
+    const tag = res.data && res.data.tag_name;
+    if (!tag) return;
+    const latest = String(tag).replace(/^v/i, '');
+    if (isNewer(latest, VERSION)) {
+      pendingUpdate = { latest };
+      logUpdateBanner();
+    } else {
+      pendingUpdate = null;
+    }
+  } catch (error: any) {
+    logger.debug(`Update check failed (non-fatal): ${error.message}`);
+  }
+}
+
+function logUpdateBanner(): void {
+  if (!pendingUpdate) return;
+  logger.warn('============================================================');
+  logger.warn('  ⚠  UPDATE AVAILABLE');
+  logger.warn(`     Palworld-Takaro Bridge v${pendingUpdate.latest} is available`);
+  logger.warn(`     You are running v${VERSION}`);
+  logger.warn(`     Update guide: ${INSTALL_URL}`);
+  logger.warn('============================================================');
+}
+
+async function announceUpdateInGame(): Promise<void> {
+  if (!pendingUpdate || !ANNOUNCE_UPDATES) return;
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+    await axios({
+      method: 'post',
+      url: `${PALWORLD_BASE_URL}/v1/api/announce`,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${authString}` },
+      data: JSON.stringify({
+        message: `[Bridge] Update available: v${pendingUpdate.latest} (running v${VERSION}). Admin: ${INSTALL_URL}`,
+      }),
+      timeout: 10000,
+    });
+    logger.info(`Announced available update v${pendingUpdate.latest} in-game`);
+  } catch (error: any) {
+    logger.debug(`In-game update announce failed (non-fatal): ${error.message}`);
+  }
+}
+
+// Check once shortly after startup, then re-check GitHub every 6 hours.
+setTimeout(fetchLatestRelease, 5000);
+setInterval(fetchLatestRelease, 6 * 60 * 60 * 1000);
+// Remind in-game every hour while an update is pending.
+setInterval(announceUpdateInGame, 60 * 60 * 1000);
 
 // Start HTTP server for chat endpoint
 app.listen(HTTP_PORT, () => {

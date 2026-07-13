@@ -26,6 +26,11 @@ REGISTRATION_TOKEN=Paste your registration token here
 # you have a reason to change it.
 HTTP_PORT=3001
 
+# When a newer bridge version is released on GitHub, the bridge logs a notice
+# at startup AND announces it in-game every hour. Set this to false to keep the
+# startup log notice but stop the in-game announcements.
+ANNOUNCE_UPDATES=true
+
 # ───────────────────────────────────────────────────────────────
 # PALWORLD SERVER SETTINGS
 # These must match your Palworld server's REST API settings
