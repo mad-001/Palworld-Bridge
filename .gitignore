@@ -8,3 +8,4 @@ ProjectsToReference/
 nul
 build/
 *.exe
+src/embedded-mod.ts

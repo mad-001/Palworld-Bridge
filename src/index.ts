@@ -6,13 +6,28 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { EMBEDDED_MOD } from './embedded-mod';
 
 const execPromise = promisify(exec);
+
+// Name the console window and print a banner (matches the old start.bat look).
+process.title = 'Palworld - Bridge';
+console.log('====================================');
+console.log('   Palworld-Takaro Bridge');
+console.log('====================================');
+console.log('');
+
+// When running as the packaged .exe, anchor everything (config, logs, game
+// detection) to the folder the .exe sits in -- not the working directory,
+// which can differ when launched with "Run as administrator".
+const IS_PACKAGED = (process as any).pkg !== undefined;
+const APP_DIR = IS_PACKAGED ? path.dirname(process.execPath) : process.cwd();
+const CONFIG_PATH = path.join(APP_DIR, 'TakaroConfig.txt');
 
 // Version (read from package.json so it can never drift from the release)
 function readVersion(): string {
   const candidates = [
-    path.join(process.cwd(), 'package.json'),
+    path.join(APP_DIR, 'package.json'),
     path.join(__dirname, '..', 'package.json'),
     path.join(__dirname, 'package.json'),
   ];
@@ -28,17 +43,147 @@ function readVersion(): string {
 }
 const VERSION = readVersion();
 
+const DEFAULT_CONFIG_TEMPLATE = `# ═══════════════════════════════════════════════════════════════
+#             TAKARO PALWORLD BRIDGE CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+# Fill in SERVER_NAME and REGISTRATION_TOKEN. The Palworld settings below
+# are filled in automatically when this app sits in your Palworld server folder.
+
+# A name for your server (shows up in Takaro).
+SERVER_NAME=Give your server a name
+
+# Registration token from https://app.takaro.io/ when you add a new server.
+REGISTRATION_TOKEN=Paste your registration token here
+
+# HTTP port for the in-game chat mod (leave as 3001).
+HTTP_PORT=3001
+
+# Palworld REST API settings (auto-filled from PalWorldSettings.ini).
+PALWORLD_HOST=127.0.0.1
+PALWORLD_PORT=8212
+PALWORLD_USERNAME=admin
+PALWORLD_PASSWORD=
+`;
+
+// ---------------------------------------------------------------------------
+// Auto-setup: when the .exe is placed inside the Palworld server folder, detect
+// the game, read PalWorldSettings.ini to pre-fill the Palworld connection in
+// TakaroConfig.txt, and install the TakaroChat mod into ue4ss/Mods.
+// Only writes our own config + the mod's files. Non-fatal on any error.
+// ---------------------------------------------------------------------------
+function findGameRoot(): string | null {
+  const override = process.env.GAME_PATH;
+  const rel = path.join('Pal', 'Saved', 'Config', 'WindowsServer', 'PalWorldSettings.ini');
+  if (override && fs.existsSync(path.join(override, rel))) return override;
+  let dir = APP_DIR;
+  for (let i = 0; i < 6; i++) {
+    if (fs.existsSync(path.join(dir, rel))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+function parsePalWorldSettings(iniPath: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  try {
+    const text = fs.readFileSync(iniPath, 'utf-8');
+    const port = text.match(/RESTAPIPort=(\d+)/);
+    const pass = text.match(/AdminPassword="([^"]*)"/);
+    const enabled = text.match(/RESTAPIEnabled=(\w+)/);
+    if (port) out.RESTAPIPort = port[1];
+    if (pass) out.AdminPassword = pass[1];
+    if (enabled) out.RESTAPIEnabled = enabled[1];
+  } catch { /* ignore */ }
+  return out;
+}
+
+function setConfigValue(content: string, key: string, value: string): string {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (t && !t.startsWith('#') && t.split('=')[0].trim() === key) {
+      lines[i] = `${key}=${value}`;
+      return lines.join('\n');
+    }
+  }
+  lines.push(`${key}=${value}`);
+  return lines.join('\n');
+}
+
+// Write the TakaroChat mod (embedded in this binary) into a destination folder.
+function installEmbeddedMod(destDir: string): void {
+  for (const [rel, data] of Object.entries(EMBEDDED_MOD)) {
+    const target = path.join(destDir, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, data);
+  }
+}
+
+// Drop a StopBridge.bat next to the app so a server manager can stop just the
+// bridge (taskkill by exe name) instead of killing everything in the folder.
+function writeStopFile(): void {
+  try {
+    const bat = path.join(APP_DIR, 'StopBridge.bat');
+    const content =
+      '@echo off\r\n' +
+      'REM Stops ONLY the Palworld-Takaro bridge, never the game server.\r\n' +
+      'taskkill /F /IM PalworldBridge.exe >nul 2>&1\r\n' +
+      'exit /b 0\r\n';
+    fs.writeFileSync(bat, content);
+  } catch { /* non-fatal */ }
+}
+
+function autoSetup(): void {
+  const log = (m: string) => console.log(`[setup] ${m}`);
+  writeStopFile();
+  const gameRoot = findGameRoot();
+  if (!gameRoot) {
+    log('Palworld server folder not found next to this app. Put PalworldBridge.exe in your server folder (the one containing "Pal"), or set GAME_PATH in TakaroConfig.txt. Skipping auto-setup.');
+    return;
+  }
+  log(`Detected Palworld server at: ${gameRoot}`);
+
+  // 1) Pre-fill Palworld connection settings from PalWorldSettings.ini.
+  const iniPath = path.join(gameRoot, 'Pal', 'Saved', 'Config', 'WindowsServer', 'PalWorldSettings.ini');
+  const pal = parsePalWorldSettings(iniPath);
+  let content = fs.existsSync(CONFIG_PATH) ? fs.readFileSync(CONFIG_PATH, 'utf-8') : DEFAULT_CONFIG_TEMPLATE;
+  content = setConfigValue(content, 'PALWORLD_HOST', '127.0.0.1');
+  content = setConfigValue(content, 'PALWORLD_USERNAME', 'admin');
+  if (pal.RESTAPIPort) content = setConfigValue(content, 'PALWORLD_PORT', pal.RESTAPIPort);
+  if (pal.AdminPassword) content = setConfigValue(content, 'PALWORLD_PASSWORD', pal.AdminPassword);
+  fs.writeFileSync(CONFIG_PATH, content);
+  log('Filled Palworld connection settings into TakaroConfig.txt.');
+  if (pal.RESTAPIEnabled && pal.RESTAPIEnabled.toLowerCase() !== 'true') {
+    log('WARNING: RESTAPIEnabled is not True in PalWorldSettings.ini — set it to True and restart the game, or the bridge cannot reach Palworld.');
+  }
+
+  // 2) Install the TakaroChat mod (only if UE4SS is present).
+  const ue4ssDir = path.join(gameRoot, 'Pal', 'Binaries', 'Win64', 'ue4ss');
+  if (fs.existsSync(ue4ssDir)) {
+    try {
+      installEmbeddedMod(path.join(ue4ssDir, 'Mods', 'TakaroChat'));
+      log('Installed/updated the TakaroChat mod. Restart the Palworld server to load it.');
+    } catch (e: any) {
+      log(`Could not install the chat mod: ${e.message} — try right-click > Run as administrator.`);
+    }
+  } else {
+    log('UE4SS is not installed, so in-game chat will not work yet. Install the Palworld-specific UE4SS, then run this app again: https://mad-001.github.io/Palworld-Bridge/#installation');
+  }
+}
+
 // Load configuration from TakaroConfig.txt
 function loadConfig() {
-  const configPath = path.join(process.cwd(), 'TakaroConfig.txt');
+  try { autoSetup(); } catch (e: any) { console.error(`[setup] skipped: ${e.message}`); }
 
-  if (!fs.existsSync(configPath)) {
+  if (!fs.existsSync(CONFIG_PATH)) {
     console.error('ERROR: TakaroConfig.txt not found!');
     console.error('Please create TakaroConfig.txt with your server settings.');
     process.exit(1);
   }
 
-  const configContent = fs.readFileSync(configPath, 'utf-8');
+  const configContent = fs.readFileSync(CONFIG_PATH, 'utf-8');
 
   configContent.split('\n').forEach(line => {
     line = line.trim();
@@ -50,12 +195,17 @@ function loadConfig() {
       }
     }
   });
+
+  const token = process.env.REGISTRATION_TOKEN || '';
+  if (!token || /paste your registration token/i.test(token)) {
+    console.error('\n*** ACTION NEEDED: Open TakaroConfig.txt, paste your Takaro Registration Token and set SERVER_NAME, then restart this app. ***\n');
+  }
 }
 
 loadConfig();
 
 // Create logs directory if it doesn't exist
-const logsDir = path.join(process.cwd(), 'logs');
+const logsDir = path.join(APP_DIR, 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
