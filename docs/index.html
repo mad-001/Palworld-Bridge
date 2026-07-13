@@ -165,22 +165,20 @@
                 <li>Click <strong>Game Server Actions</strong> in the top right.</li>
                 <li>Click <strong>Create a New Game Server</strong>.</li>
                 <li>Choose <strong>Generic</strong> as the server type.</li>
-                <li>Takaro shows a <strong>Registration Token</strong>. Copy it &mdash; you'll paste it in Step 5.</li>
+                <li>Takaro shows a <strong>Registration Token</strong>. Copy it &mdash; you'll paste it in Step 4.</li>
                 <li>Click <strong>Cancel</strong>.</li>
+                <li>Stop your Palworld server so you can set it up.</li>
             </ol>
 
-            <h2 id="step2">Step 2 &mdash; Stop Your Palworld Server</h2>
-            <p>Stop the server before you set things up.</p>
-
-            <h2 id="step3">Step 3 &mdash; Enable the Palworld REST API</h2>
+            <h2 id="step2">Step 2 &mdash; Enable the Palworld REST API</h2>
             <p>In <code>PalWorldSettings.ini</code> (at <code>[Server folder]\Pal\Saved\Config\WindowsServer\PalWorldSettings.ini</code>), set:</p>
             <pre><code>RESTAPIEnabled=True
 RESTAPIPort=8212
 AdminPassword=YourSecurePassword</code></pre>
 
-            <h2 id="step4">Step 4 &mdash; Install UE4SS</h2>
+            <h2 id="step3">Step 3 &mdash; Install UE4SS</h2>
             <div class="warning-box">
-                <strong>Use the Palworld-specific UE4SS.</strong> Since Palworld patch 0.4.1.5 the normal UE4SS crashes the server. Download <code>UE4SS-Palworld.zip</code> from <a href="https://github.com/Okaetsu/RE-UE4SS/releases/tag/experimental-palworld" target="_blank">Okaetsu's experimental-palworld release</a>. If you had another UE4SS installed, delete the old <code>dwmapi.dll</code> and <code>ue4ss</code> folder first.
+                Download <code>UE4SS-Palworld.zip</code> from <a href="https://github.com/Okaetsu/RE-UE4SS/releases/tag/experimental-palworld" target="_blank">Okaetsu's experimental-palworld release</a>. If you had another UE4SS installed, delete the old <code>dwmapi.dll</code> and <code>ue4ss</code> folder first.
             </div>
             <ol>
                 <li>Download <code>UE4SS-Palworld.zip</code> and unzip it.</li>
@@ -188,7 +186,7 @@ AdminPassword=YourSecurePassword</code></pre>
                 <li>If Windows blocked the files: right-click each &rarr; <strong>Properties</strong> &rarr; <strong>Unblock</strong> &rarr; <strong>Apply</strong>.</li>
             </ol>
 
-            <h2 id="step5">Step 5 &mdash; Install the Bridge</h2>
+            <h2 id="step4">Step 4 &mdash; Install the Bridge</h2>
             <ol>
                 <li>Download <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" target="_blank"><code>PalworldBridge.exe</code></a> and put it in your <strong>server folder</strong> &mdash; the one that contains <code>Pal</code> (for example <code>C:\gameservers\palworld</code>).</li>
                 <li>Right-click it &rarr; <strong>Run as administrator</strong>. It fills in the Palworld settings, creates <code>TakaroConfig.txt</code>, and installs the chat mod. Close the window when it says it needs your token. (Windows may warn "Windows protected your PC" &rarr; <strong>More info</strong> &rarr; <strong>Run anyway</strong>.)</li>
@@ -198,7 +196,7 @@ REGISTRATION_TOKEN=paste the token from Step 1</code></pre>
                 </li>
             </ol>
 
-            <h2 id="step6">Step 6 &mdash; Add the Takaro Modules</h2>
+            <h2 id="step5">Step 5 &mdash; Add the Takaro Modules</h2>
             <p>Modules add features to your Takaro server. Download these two (right-click &rarr; Save Link As, or open and use GitHub's <strong>Download raw file</strong> button):</p>
             <ul>
                 <li><a href="https://github.com/mad-001/Palworld-Bridge/blob/master/TakaroModules/Palworld%20-%20Commands.json" target="_blank"><strong>Palworld - Commands</strong></a> &mdash; adds the player commands <code>!sethome</code>, <code>!home</code>, and <code>!visit</code>.</li>
@@ -216,7 +214,7 @@ REGISTRATION_TOKEN=paste the token from Step 1</code></pre>
                 <strong>For Discord:</strong> once the <em>Discord Integration - Generic</em> module is installed, follow <a href="https://docs.takaro.io/discord-integration#connect-the-discord-bot" target="_blank">Connect the Discord bot</a> in Takaro's docs, then set your Discord channel in the module's settings.
             </div>
 
-            <h2 id="step7">Step 7 &mdash; Start Everything</h2>
+            <h2 id="step6">Step 6 &mdash; Start Everything</h2>
             <p>Start your Palworld server, then run <code>PalworldBridge.exe</code>. The bridge connects to Takaro and your server appears in your Takaro dashboard. Leave the bridge window open while you want it running.</p>
 
             <h2 id="commands">Available Commands</h2>
@@ -251,12 +249,11 @@ REGISTRATION_TOKEN=paste the token from Step 1</code></pre>
             <a href="#what-you-get">What You Get</a>
             <a href="#before">Before You Start</a>
             <a href="#step1">1. Takaro Tokens</a>
-            <a href="#step2">2. Stop Server</a>
-            <a href="#step3">3. REST API</a>
-            <a href="#step4">4. Install UE4SS</a>
-            <a href="#step5">5. Install Bridge</a>
-            <a href="#step6">6. Takaro Modules</a>
-            <a href="#step7">7. Start Everything</a>
+            <a href="#step2">2. REST API</a>
+            <a href="#step3">3. Install UE4SS</a>
+            <a href="#step4">4. Install Bridge</a>
+            <a href="#step5">5. Takaro Modules</a>
+            <a href="#step6">6. Start Everything</a>
             <a href="#commands">Commands</a>
             <a href="#links">Links</a>
         </nav>
