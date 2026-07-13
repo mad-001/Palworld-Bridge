@@ -241,8 +241,19 @@ pm2 start dist/index.js --name palworld-bridge</code></pre>
         </div>
 
         <h2>Step 6 &mdash; Add the Takaro Modules</h2>
-        <div class="warning-box">
-            <strong>&#9888; This section is being finalized.</strong> Commands and chat come from Takaro <em>modules</em> that get installed on your Takaro server. The recommended module(s) and step-by-step install instructions will be added here shortly.
+        <p>Modules add features to your Takaro server. Two come bundled in your download, in the <code>TakaroModules</code> folder:</p>
+        <ul>
+            <li><strong>Palworld - Commands</strong> &mdash; adds the player commands <code>!sethome</code>, <code>!home</code>, and <code>!visit</code>.</li>
+            <li><strong>Discord Integration - Generic</strong> &mdash; connects your game to Discord: player join / leave / death messages, an online-offline status message, and two-way chat between the game and Discord.</li>
+        </ul>
+        <p>Import each one into Takaro:</p>
+        <ol>
+            <li>In Takaro, open the <strong>Modules</strong> page.</li>
+            <li>Click <strong>Import Module</strong> and pick the <code>.json</code> file from the <code>TakaroModules</code> folder.</li>
+            <li>After it imports, <strong>install</strong> the module on your Palworld server (open the module and install / assign it to your server).</li>
+        </ol>
+        <div class="note">
+            <strong>For Discord:</strong> once the <em>Discord Integration - Generic</em> module is installed, set your Discord channel (and bot, if you want two-way chat) in the module's settings. See <a href="https://docs.takaro.io/" target="_blank">Takaro's documentation</a> for connecting Discord to Takaro.
         </div>
 
         <h2>Chat Integration (Optional)</h2>
