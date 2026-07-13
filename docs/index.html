@@ -199,13 +199,15 @@ AdminPassword=YourSecurePassword</code></pre>
             The bridge is a <strong>separate application</strong> from your Palworld server. Put it in its <strong>own folder</strong> &mdash; not inside the Palworld server folder.
         </div>
         <ol>
-            <li><strong>Install Node.js</strong> (this runs the bridge). Download the "LTS" version from <a href="https://nodejs.org/" target="_blank">nodejs.org</a> and install it with the default options. You only do this once.</li>
             <li><strong>Make a folder</strong> for the bridge, for example <code>C:\Palworld-Bridge</code>.</li>
-            <li><strong>Download the bridge:</strong> grab the <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" target="_blank">latest release</a> (the <code>Palworld-Bridge-vX.X.X.tar.gz</code> file) and unzip it into the folder you made. This download already includes the bridge, a ready-to-edit config file, and the chat mod.</li>
-            <li><strong>Open a terminal in that folder:</strong> hold <strong>Shift</strong>, right-click the folder, and choose <strong>"Open PowerShell window here"</strong> (or "Open in Terminal"). Then run:
-                <pre><code>npm install</code></pre>
+            <li>From the <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" target="_blank">latest release</a>, download these two files into that folder:
+                <ul>
+                    <li><code>PalworldBridge.exe</code> &mdash; the bridge itself</li>
+                    <li><code>TakaroConfig.txt</code> &mdash; the settings file you'll edit next</li>
+                </ul>
             </li>
         </ol>
+        <p>That's it &mdash; no Node.js, no installers, nothing to unzip.</p>
 
         <h2>Step 4 &mdash; Configure the Bridge</h2>
         <p>Open <code>TakaroConfig.txt</code> (it's in the bridge folder) in Notepad and fill in your details:</p>
@@ -226,13 +228,12 @@ PALWORLD_PASSWORD=YourAdminPassword</code></pre>
         <p>Save the file (keep the name <code>TakaroConfig.txt</code>).</p>
 
         <h2>Step 5 &mdash; Start the Bridge</h2>
-        <p>In the terminal you opened in Step 3, run:</p>
-        <pre><code>npm start</code></pre>
-        <p>To keep it running in the background (recommended for a live server), use PM2:</p>
-        <pre><code>npm install -g pm2
-pm2 start dist/index.js --name palworld-bridge</code></pre>
+        <p>Double-click <code>PalworldBridge.exe</code>. A window opens, connects to Takaro, and stays open while the bridge runs. Leave the window open (minimize it) whenever you want the bridge online.</p>
+        <div class="note">
+            <strong>First time only:</strong> Windows may warn "Windows protected your PC" because the app isn't code-signed. Click <strong>More info</strong> &rarr; <strong>Run anyway</strong>.
+        </div>
         <div class="info-box">
-            <strong>Connected!</strong> The bridge will log that it connected to Takaro. Your server now appears in your Takaro dashboard.
+            <strong>Connected!</strong> The window shows it connected to Takaro, and your server appears in your Takaro dashboard.
         </div>
 
         <h2>Step 6 &mdash; Add the Takaro Modules</h2>
