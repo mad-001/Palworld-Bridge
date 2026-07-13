@@ -1832,9 +1832,14 @@ async function fetchLatestRelease(): Promise<void> {
     const tag = res.data && res.data.tag_name;
     if (!tag) return;
     const latest = String(tag).replace(/^v/i, '');
+    const alreadyKnown = pendingUpdate !== null;
     if (isNewer(latest, VERSION)) {
       pendingUpdate = { latest };
       logUpdateBanner();
+      // Announce in-game right away the first time we detect it, then hourly.
+      if (!alreadyKnown) {
+        announceUpdateInGame();
+      }
     } else {
       pendingUpdate = null;
     }
