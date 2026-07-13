@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mad-001.github.io/Palworld-Bridge/sitemap.xml
