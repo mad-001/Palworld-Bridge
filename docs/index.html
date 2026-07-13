@@ -149,221 +149,156 @@
 </head>
 <body>
     <div class="container">
-        <h1>Palworld-Takaro Bridge <span style="font-size: 0.6em; color: #a0a0a0;">v1.5.1</span></h1>
-        <p style="font-size: 1.2em; margin-bottom: 30px;">Connect your Palworld dedicated server to Takaro for Discord integration, player management, and server control.</p>
+        <h1>Palworld-Takaro Bridge</h1>
+        <p style="font-size: 1.2em; margin-bottom: 30px;">Connect your Palworld dedicated server to Takaro for player management, server control, teleports, and in-game chat &mdash; no coding required.</p>
 
-        <div class="note">
-            <strong>What's New in v1.5.1:</strong>
-            <ul style="margin-left: 20px; margin-top: 10px;">
-                <li><strong>CRITICAL FIX: Chat Event Handling</strong> - Fixed "Internal error handling game event" errors from Takaro when processing chat messages</li>
-                <li><strong>Player Cache Validation</strong> - Chat events now properly validate player is in cache before sending to Takaro</li>
-                <li><strong>Prevented Invalid Data</strong> - Removed fallback code that sent player names as gameId instead of Steam IDs</li>
-                <li><strong>Auto Cache Refresh</strong> - Triggers immediate player list refresh when cache miss occurs during chat events</li>
-            </ul>
-        </div>
-
-        <div class="note" style="margin-top: 15px; background: rgba(167, 139, 250, 0.1); border-left-color: #a78bfa;">
-            <strong>Previous Release - v1.5.0:</strong>
-            <ul style="margin-left: 20px; margin-top: 10px;">
-                <li><strong>PlayerState Handling</strong> - Fixed intermittent invalid PlayerState causing location timeouts and teleport failures</li>
-                <li><strong>Player Name Consistency</strong> - Bridge now auto-corrects inconsistent names using authoritative UE4SS responses</li>
-                <li><strong>Teleport System</strong> - <code>!visit</code> command now works reliably for all players</li>
-                <li><strong>Auto Log Cleanup</strong> - Bridge keeps only 10 most recent log files to prevent disk bloat</li>
-            </ul>
-        </div>
-
-        <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" class="download-btn">Download Latest Release</a>
-        <a href="https://github.com/mad-001/Palworld-Bridge/releases" class="download-btn">View Previous Versions</a>
+        <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" class="download-btn">Download the Bridge</a>
 
         <h2>What You Get</h2>
         <ul>
-            <li><strong>Bridge Service</strong> - Connects Palworld REST API to Takaro platform</li>
-            <li><strong>Player Tracking</strong> - Real-time location tracking and connect/disconnect events</li>
-            <li><strong>Console Commands</strong> - Kick, ban, announce, shutdown from Takaro web console</li>
-            <li><strong>Teleport System</strong> - Player-to-player and coordinate-based teleportation via queue system</li>
-            <li><strong>Location Lookup</strong> - Get live player coordinates (X/Y/Z) by name or Steam ID</li>
-            <li><strong>Chat Integration</strong> - Optional UE4SS mod for game chat to Discord (bi-directional)</li>
+            <li><strong>Server control from Takaro</strong> &mdash; kick, ban, announce, save, and shut down from the Takaro web console.</li>
+            <li><strong>Player tracking</strong> &mdash; who's online, plus join/leave events.</li>
+            <li><strong>Teleports</strong> &mdash; player-to-player and coordinate teleports.</li>
+            <li><strong>Location lookup</strong> &mdash; live X/Y/Z coordinates for any player.</li>
+            <li><strong>In-game chat</strong> &mdash; forward chat between your game and Takaro (optional add-on).</li>
         </ul>
 
-        <h2>Prerequisites</h2>
+        <h2>Before You Start</h2>
+        <p>You'll need three things:</p>
         <ul>
-            <li>Palworld dedicated server</li>
-            <li>Node.js 18 or higher</li>
-            <li>Takaro account - Get access at <a href="https://takaro.io/pricing/?via=zach550">takaro.io</a> or their <a href="https://discord.gg/takaro">Discord</a></li>
+            <li>A <strong>Palworld dedicated server</strong> you control (so you can edit its settings and restart it).</li>
+            <li>The <strong>Windows machine</strong> your server runs on (the bridge normally runs on the same machine).</li>
+            <li>A <strong>Takaro account</strong> &mdash; free to start. Get it at <a href="https://takaro.io/pricing/?via=zach550" target="_blank">takaro.io</a> or join their <a href="https://discord.gg/takaro" target="_blank">Discord</a> for help.</li>
         </ul>
 
-        <h2>Setup: Bridge</h2>
+        <div class="note">
+            <strong>New to this?</strong> Follow the steps in order. You do <em>not</em> need to know how to code. Anywhere you see a black box, that's text you copy exactly.
+        </div>
 
-        <h3>1. Enable Palworld REST API</h3>
-        <p>Edit <code>PalWorldSettings.ini</code> in your Palworld server:</p>
+        <h2>Step 1 &mdash; Get Your Takaro Tokens</h2>
+        <ol>
+            <li>Go to <a href="https://takaro.io/pricing/?via=zach550" target="_blank">takaro.io</a> and choose the <strong>Free</strong> tier to start.</li>
+            <li>Check your email and finish creating your account, then log in.</li>
+            <li>Click <strong>Create Game Server</strong>.</li>
+            <li>Choose <strong>Generic</strong> as the server type. If you're asked to create a profile, click <strong>Cancel</strong> &mdash; generic profiles are created automatically.</li>
+            <li>Give the server a name. You'll use this as your <strong>Server Name</strong> in Step 3.</li>
+            <li>Takaro shows a <strong>Registration Token</strong>. Copy it &mdash; you'll paste it into the config in Step 3.</li>
+        </ol>
+
+        <h2>Step 2 &mdash; Enable the Palworld REST API</h2>
+        <p>The bridge talks to your Palworld server through its built-in API. Turn it on in <code>PalWorldSettings.ini</code>:</p>
         <pre><code>RESTAPIEnabled=True
 RESTAPIPort=8212
 AdminPassword=YourSecurePassword</code></pre>
+        <p>Save the file and restart your Palworld server once so the setting takes effect.</p>
 
-        <h3>2. Get Takaro Tokens</h3>
+        <h2>Step 3 &mdash; Install the Bridge</h2>
+        <div class="info-box">
+            The bridge is a <strong>separate application</strong> from your Palworld server. Put it in its <strong>own folder</strong> &mdash; not inside the Palworld server folder.
+        </div>
         <ol>
-            <li>Go to <a href="https://takaro.io/?via=zach550" target="_blank">takaro.io</a>.</li>
-            <li>Click on <strong>Pricing</strong>.</li>
-            <li>Choose the <strong>Free</strong> tier for now.</li>
-            <li>Check your email and follow the steps in the email.</li>
-            <li>Once you're logged in, click <strong>Create Game Server</strong>.</li>
-            <li>Name the server (this becomes your <strong>Identity Token</strong>).</li>
-            <li>Choose <strong>Generic</strong> as the server type.</li>
-            <li>Takaro will generate a <strong>Registration Token</strong>. Copy it — you'll paste it into the config file in Step 4.</li>
+            <li><strong>Install Node.js</strong> (this runs the bridge). Download the "LTS" version from <a href="https://nodejs.org/" target="_blank">nodejs.org</a> and install it with the default options. You only do this once.</li>
+            <li><strong>Make a folder</strong> for the bridge, for example <code>C:\Palworld-Bridge</code>.</li>
+            <li><strong>Download the bridge:</strong> grab the <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" target="_blank">latest release</a> (the <code>Palworld-Bridge-vX.X.X.tar.gz</code> file) and unzip it into the folder you made. This download already includes the bridge, a ready-to-edit config file, and the chat mod.</li>
+            <li><strong>Open a terminal in that folder:</strong> hold <strong>Shift</strong>, right-click the folder, and choose <strong>"Open PowerShell window here"</strong> (or "Open in Terminal"). Then run:
+                <pre><code>npm install</code></pre>
+            </li>
         </ol>
-
-        <h3>3. Install Bridge</h3>
-        <pre><code>git clone https://github.com/mad-001/Palworld-Bridge.git
+        <div class="note">
+            <strong>Prefer to build from source?</strong> If you're comfortable with the command line:
+            <pre><code>git clone https://github.com/mad-001/Palworld-Bridge.git
 cd Palworld-Bridge
 npm install
 npm run build</code></pre>
+        </div>
 
-        <h3>4. Configure Bridge</h3>
-        <p>Create <code>TakaroConfig.txt</code> in the bridge directory:</p>
+        <h2>Step 4 &mdash; Configure the Bridge</h2>
+        <p>Open <code>TakaroConfig.txt</code> (it's in the bridge folder) in Notepad and fill in your details:</p>
         <pre><code># Takaro Connection
 SERVER_NAME=Give your server a name
-REGISTRATION_TOKEN=YourRegistrationToken
+REGISTRATION_TOKEN=Paste your registration token here
 
 # Palworld Server Settings
 PALWORLD_HOST=127.0.0.1
 PALWORLD_PORT=8212
 PALWORLD_USERNAME=admin
 PALWORLD_PASSWORD=YourAdminPassword</code></pre>
+        <ul>
+            <li><strong>SERVER_NAME</strong> &mdash; the name from Step 1.</li>
+            <li><strong>REGISTRATION_TOKEN</strong> &mdash; the token you copied in Step 1.</li>
+            <li><strong>PALWORLD_PASSWORD</strong> &mdash; the <code>AdminPassword</code> from Step 2.</li>
+        </ul>
+        <p>Save the file (keep the name <code>TakaroConfig.txt</code>).</p>
 
-        <h3>5. Start Bridge</h3>
-        <pre><code>npm start
-# Or with PM2:
+        <h2>Step 5 &mdash; Start the Bridge</h2>
+        <p>In the terminal you opened in Step 3, run:</p>
+        <pre><code>npm start</code></pre>
+        <p>To keep it running in the background (recommended for a live server), use PM2:</p>
+        <pre><code>npm install -g pm2
 pm2 start dist/index.js --name palworld-bridge</code></pre>
-
         <div class="info-box">
-            <strong>That's it!</strong> Your bridge should now connect to Takaro. Check the logs to confirm connection.
+            <strong>Connected!</strong> The bridge will log that it connected to Takaro. Your server now appears in your Takaro dashboard.
         </div>
 
-        <h2>Setup: Chat Integration (Optional)</h2>
-        <p>Enables game chat to forward to Discord and Discord messages to relay back to the game.</p>
+        <h2>Step 6 &mdash; Add the Takaro Modules</h2>
+        <div class="warning-box">
+            <strong>&#9888; This section is being finalized.</strong> Commands and chat come from Takaro <em>modules</em> that get installed on your Takaro server. The recommended module(s) and step-by-step install instructions will be added here shortly.
+        </div>
 
-        <h3>Prerequisites</h3>
-        <ul>
-            <li>Bridge must be running (see above)</li>
-            <li>Download <a href="https://github.com/Okaetsu/RE-UE4SS/releases/tag/experimental-palworld">UE4SS Palworld Experimental</a> (required for Palworld 0.4.1.5+)</li>
-        </ul>
+        <h2>Chat Integration (Optional)</h2>
+        <p>This add-on forwards in-game chat to and from Takaro. It needs a small mod (UE4SS) installed on the <strong>game server</strong>.</p>
 
         <div class="warning-box">
-            <strong>Important:</strong> Palworld 0.4.1.5+ requires the Palworld-specific experimental UE4SS from Okaetsu's fork. The standard UE4SS will NOT work due to engine changes.
+            <strong>Use the Palworld-specific UE4SS.</strong> Since Palworld patch 0.4.1.5 the normal UE4SS crashes the server. Download <code>UE4SS-Palworld.zip</code> from <a href="https://github.com/Okaetsu/RE-UE4SS/releases/tag/experimental-palworld" target="_blank">Okaetsu's experimental-palworld release</a>. If you had another UE4SS installed, delete the old <code>dwmapi.dll</code> and <code>ue4ss</code> folder first.
         </div>
 
         <h3>1. Install UE4SS</h3>
         <ol>
-            <li>Download <code>UE4SS-Palworld.zip</code> from <a href="https://github.com/Okaetsu/RE-UE4SS/releases/tag/experimental-palworld">experimental-palworld release</a></li>
-            <li>Extract entire <code>ue4ss</code> folder to <code>PalServer\Pal\Binaries\Win64\</code></li>
-            <li>If Windows blocks files: Right-click → Properties → Unblock → Apply</li>
+            <li>Download <code>UE4SS-Palworld.zip</code> from the link above and unzip it.</li>
+            <li>Copy <code>dwmapi.dll</code> and the <code>ue4ss</code> folder into <code>PalServer\Pal\Binaries\Win64\</code>.</li>
+            <li>If Windows blocked the files: right-click each &rarr; <strong>Properties</strong> &rarr; <strong>Unblock</strong> &rarr; <strong>Apply</strong>.</li>
         </ol>
 
-        <h3>2. Install TakaroChat Mod</h3>
-        <p>Copy <code>TakaroChat</code> folder from bridge repository to:</p>
-        <pre><code>PalServer\Pal\Binaries\Win64\ue4ss\Mods\TakaroChat\</code></pre>
-
-        <p>Final structure:</p>
+        <h3>2. Install the TakaroChat Mod</h3>
+        <p>The <code>TakaroChat</code> folder came inside the bridge download. If you need it on its own, you can also get it here:
+           <a href="https://github.com/mad-001/Palworld-Bridge/tree/master/TakaroChat" target="_blank">github.com/mad-001/Palworld-Bridge/tree/master/TakaroChat</a>.</p>
+        <p>Copy the whole <code>TakaroChat</code> folder into your UE4SS mods folder so it looks like this:</p>
         <pre><code>PalServer\Pal\Binaries\Win64\
 └── ue4ss\
-    ├── UE4SS.dll
-    ├── UE4SS-settings.ini
     └── Mods\
         └── TakaroChat\
             ├── enabled.txt
             └── Scripts\
                 ├── main.lua
-                └── config.lua</code></pre>
+                └── ...</code></pre>
 
-        <h3>3. Configure TakaroChat</h3>
-        <p>Edit <code>TakaroChat/Scripts/config.lua</code>:</p>
-        <pre><code>-- Bridge Connection
-config.BridgeURL = "http://localhost:3001/chat"  -- Bridge endpoint (default 3001)
-config.EnableBridge = true
+        <h3>3. Check the Chat Config</h3>
+        <p>The defaults work for most people. If your bridge uses a non-default port, open <code>TakaroChat/Scripts/config.lua</code> and match it:</p>
+        <pre><code>config.BridgeURL = "http://localhost:3001/chat"  -- must match the bridge's HTTP_PORT
+config.EnableBridge = true</code></pre>
 
--- Chat Categories (Palworld chat types)
--- 1 = Say (local), 2 = Guild, 3 = Global
-config.SendCategories = {1, 2, 3}  -- Which categories to send</code></pre>
-
-        <h3>4. Restart Palworld Server</h3>
-        <p>Stop and start your server. UE4SS and TakaroChat will load automatically.</p>
-
-        <div class="info-box">
-            <strong>Chat working?</strong> Test by sending a message in-game. It should appear in your Discord channel via Takaro.
-        </div>
+        <h3>4. Restart the Palworld Server</h3>
+        <p>Stop and start your server. UE4SS and the TakaroChat mod load automatically when the server boots.</p>
 
         <h2>Available Commands</h2>
         <p>Use these in the Takaro web console (not in-game):</p>
         <ul>
-            <li><code>help</code> - List all commands</li>
-            <li><code>players</code> - Show online players</li>
-            <li><code>serverinfo</code> - Server details</li>
-            <li><code>metrics</code> - Server metrics</li>
-            <li><code>settings</code> - Server settings</li>
-            <li><code>announce &lt;message&gt;</code> - Send announcement</li>
-            <li><code>save</code> - Save world</li>
-            <li><code>shutdown [seconds] [message]</code> - Shutdown with countdown</li>
-            <li><code>stop</code> - Stop immediately</li>
-            <li><code>kick &lt;player_name&gt;</code> - Kick player</li>
-            <li><code>ban &lt;player_name&gt;</code> - Ban player</li>
-            <li><code>unban &lt;steam_id&gt;</code> - Unban player</li>
-            <li><code>teleportplayer &lt;source&gt; &lt;target&gt;</code> - Teleport player to another player</li>
-            <li><code>teleportplayer &lt;source&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt;</code> - Teleport player to coordinates</li>
-            <li><code>location &lt;player_name_or_gameid&gt;</code> - Get live player coordinates</li>
+            <li><code>help</code> &mdash; List all commands</li>
+            <li><code>players</code> &mdash; Show online players</li>
+            <li><code>serverinfo</code> &mdash; Server details</li>
+            <li><code>metrics</code> &mdash; Server metrics</li>
+            <li><code>settings</code> &mdash; Server settings</li>
+            <li><code>announce &lt;message&gt;</code> &mdash; Send an announcement</li>
+            <li><code>save</code> &mdash; Save the world</li>
+            <li><code>shutdown [seconds] [message]</code> &mdash; Shutdown with countdown</li>
+            <li><code>stop</code> &mdash; Stop immediately</li>
+            <li><code>kick &lt;player_name&gt;</code> &mdash; Kick a player</li>
+            <li><code>ban &lt;player_name&gt;</code> &mdash; Ban a player</li>
+            <li><code>unban &lt;steam_id&gt;</code> &mdash; Unban a player</li>
+            <li><code>teleportplayer &lt;source&gt; &lt;target&gt;</code> &mdash; Teleport a player to another player</li>
+            <li><code>teleportplayer &lt;source&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt;</code> &mdash; Teleport a player to coordinates</li>
+            <li><code>location &lt;player_name_or_gameid&gt;</code> &mdash; Get live player coordinates</li>
         </ul>
-
-        <h2>Troubleshooting</h2>
-
-        <h3>Bridge Issues</h3>
-        <div class="warning-box">
-            <strong>Bridge won't connect to Takaro:</strong>
-            <ul>
-                <li>Check SERVER_NAME and REGISTRATION_TOKEN are correct</li>
-                <li>Check bridge logs for errors: <code>tail -f palworld-bridge.log</code> or <code>pm2 logs palworld-bridge</code></li>
-                <li>Verify internet connectivity</li>
-            </ul>
-        </div>
-
-        <div class="warning-box">
-            <strong>Can't connect to Palworld server:</strong>
-            <ul>
-                <li>Verify REST API is enabled in PalWorldSettings.ini</li>
-                <li>Check AdminPassword matches between config and server</li>
-                <li>Ensure port 8212 is accessible</li>
-                <li>Confirm server is running</li>
-            </ul>
-        </div>
-
-        <h3>Chat Integration Issues</h3>
-        <div class="warning-box">
-            <strong>UE4SS not loading:</strong>
-            <ul>
-                <li>Ensure <code>dwmapi.dll</code> is in <code>Win64\</code> directory</li>
-                <li>Unblock DLL: Right-click → Properties → Unblock → Apply</li>
-                <li>Verify UE4SS version 3.0.0 or higher</li>
-                <li>Check <code>UE4SS.log</code> for errors</li>
-            </ul>
-        </div>
-
-        <div class="warning-box">
-            <strong>Chat not appearing in Discord:</strong>
-            <ul>
-                <li>Check bridge logs for incoming chat messages from mod</li>
-                <li>Verify <code>config.BridgeURL</code> uses correct port (default: <code>http://localhost:3001/chat</code>)</li>
-                <li>Ensure Takaro has chat forwarding configured</li>
-                <li>Confirm TakaroChat mod is enabled: check <code>enabled.txt</code> exists</li>
-            </ul>
-        </div>
-
-        <h3>Command Issues</h3>
-        <div class="warning-box">
-            <strong>Commands not working:</strong>
-            <ul>
-                <li>Ensure bridge is connected (check logs)</li>
-                <li>Type commands in Takaro web console, NOT in-game chat</li>
-                <li>Verify command syntax with <code>help</code> command</li>
-            </ul>
-        </div>
 
         <h2>Links</h2>
         <ul>
