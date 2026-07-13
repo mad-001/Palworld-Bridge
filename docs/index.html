@@ -5,152 +5,115 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Palworld-Takaro Bridge</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg: #ffffff;
+            --text: #1f2328;
+            --muted: #59636e;
+            --border: #d1d9e0;
+            --accent: #2563eb;
+            --code-bg: #f3f4f6;
+            --pre-bg: #f6f8fa;
         }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
         }
-
         .container {
-            max-width: 900px;
+            max-width: 780px;
             margin: 0 auto;
-            background: rgba(30, 30, 40, 0.95);
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            padding: 56px 24px 96px;
         }
-
         h1 {
-            font-size: 2.5em;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-            background: linear-gradient(135deg, #a78bfa 0%, #c4b5fd 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        h2 {
-            font-size: 1.8em;
-            margin-top: 40px;
-            margin-bottom: 15px;
-            color: #a78bfa;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
-            border-bottom: 2px solid rgba(167, 139, 250, 0.3);
-            padding-bottom: 10px;
-        }
-
-        h3 {
-            font-size: 1.3em;
-            margin-top: 25px;
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
             margin-bottom: 10px;
-            color: #c4b5fd;
+            color: #0d1117;
         }
-
-        p {
-            margin-bottom: 15px;
-            line-height: 1.8;
+        .subtitle {
+            font-size: 1.15rem;
+            color: var(--muted);
+            margin-bottom: 26px;
         }
-
+        .hero {
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            margin-bottom: 28px;
+            display: block;
+        }
+        h2 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-top: 44px;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+            color: #0d1117;
+        }
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-top: 26px;
+            margin-bottom: 8px;
+            color: #0d1117;
+        }
+        p { margin-bottom: 14px; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        strong { font-weight: 600; }
         .download-btn {
             display: inline-block;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px 30px;
+            background: var(--accent);
+            color: #fff;
+            padding: 11px 22px;
             border-radius: 8px;
-            text-decoration: none;
-            font-weight: bold;
-            margin: 20px 0;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            font-weight: 600;
+            margin: 8px 0 4px;
+            transition: background 0.15s ease;
         }
-
-        .download-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
-        }
-
-        .info-box {
-            background: rgba(59, 130, 246, 0.1);
-            border-left: 4px solid #3b82f6;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 5px;
-        }
-
-        .warning-box {
-            background: rgba(239, 68, 68, 0.1);
-            border-left: 4px solid #ef4444;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 5px;
-        }
-
+        .download-btn:hover { background: #1d4ed8; text-decoration: none; }
         code {
-            background: rgba(0, 0, 0, 0.3);
-            color: #fbbf24;
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-        }
-
-        pre {
-            background: rgba(0, 0, 0, 0.4);
-            padding: 20px;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 15px 0;
-            border: 1px solid rgba(167, 139, 250, 0.2);
-        }
-
-        pre code {
-            background: none;
-            padding: 0;
-            color: #e0e0e0;
-        }
-
-        ul, ol {
-            margin: 15px 0 15px 30px;
-        }
-
-        li {
-            margin-bottom: 10px;
-            line-height: 1.6;
-        }
-
-        a {
-            color: #a78bfa;
-            text-decoration: none;
-            transition: color 0.3s ease;
-        }
-
-        a:hover {
-            color: #c4b5fd;
-            text-decoration: underline;
-        }
-
-        .note {
-            background: rgba(251, 191, 36, 0.1);
-            border-left: 4px solid #fbbf24;
-            padding: 15px;
-            margin: 20px 0;
+            background: var(--code-bg);
+            color: #1f2328;
+            padding: 0.15em 0.4em;
             border-radius: 5px;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            font-size: 0.87em;
         }
+        pre {
+            background: var(--pre-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            overflow-x: auto;
+            margin: 14px 0;
+        }
+        pre code { background: none; padding: 0; color: #1f2328; font-size: 0.85em; }
+        ul, ol { margin: 12px 0 14px 24px; }
+        li { margin-bottom: 6px; }
+        li > ul, li > ol { margin-top: 6px; }
+        .info-box, .warning-box, .note {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 18px 0;
+            border: 1px solid var(--border);
+            border-left-width: 4px;
+        }
+        .info-box { background: #eff6ff; border-left-color: #2563eb; }
+        .warning-box { background: #fef2f2; border-left-color: #ef4444; }
+        .note { background: #fffbeb; border-left-color: #f59e0b; }
     </style>
 </head>
 <body>
     <div class="container">
+        <img src="palworld-hero.jpg" alt="Palworld" class="hero">
         <h1>Palworld-Takaro Bridge</h1>
-        <p style="font-size: 1.2em; margin-bottom: 30px;">Connect your Palworld dedicated server to Takaro for player management, server control, teleports, and in-game chat &mdash; no coding required.</p>
+        <p class="subtitle">Connect your Palworld dedicated server to Takaro for player management, server control, teleports, and in-game chat &mdash; no coding required.</p>
 
         <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" class="download-btn">Download the Bridge</a>
 
@@ -170,10 +133,6 @@
             <li>The <strong>Windows machine</strong> your server runs on (the bridge normally runs on the same machine).</li>
             <li>A <strong>Takaro account</strong> &mdash; free to start. Get it at <a href="https://takaro.io/pricing/?via=zach550" target="_blank">takaro.io</a> or join their <a href="https://discord.gg/takaro" target="_blank">Discord</a> for help.</li>
         </ul>
-
-        <div class="note">
-            <strong>New to this?</strong> Follow the steps in order. You do <em>not</em> need to know how to code. Anywhere you see a black box, that's text you copy exactly.
-        </div>
 
         <h2>Step 1 &mdash; Get Your Takaro Tokens</h2>
         <ol>
