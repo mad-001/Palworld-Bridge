@@ -1,6 +1,6 @@
-# Palworld-Takaro Bridge
+# Palworld Server Manager - Takaro
 
-🦖 Connect your Palworld dedicated server to the Takaro game server management platform.
+🦖 A free Palworld server manager — connect your Palworld dedicated server to the Takaro game server management platform for player management, teleports, in-game chat, and Discord.
 
 [![GitHub release](https://img.shields.io/github/v/release/mad-001/Palworld-Bridge)](https://github.com/mad-001/Palworld-Bridge/releases/latest)
 [![License](https://img.shields.io/github/license/mad-001/Palworld-Bridge)](LICENSE)
