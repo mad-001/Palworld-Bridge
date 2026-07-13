@@ -36,12 +36,17 @@
 
 2. **Install Bridge**
 
+   Download the latest release (`Palworld-Bridge-vX.X.X.tar.gz` from the
+   [Releases page](https://github.com/mad-001/Palworld-Bridge/releases/latest)) and
+   extract it. The download includes everything: the prebuilt bridge, a ready-to-edit
+   `TakaroConfig.txt`, and the `TakaroChat` UE4SS mod. Then install dependencies:
+
    ```bash
-   git clone https://github.com/mad-001/Palworld-Bridge.git
    cd Palworld-Bridge
    npm install
-   npm run build
    ```
+
+   > Building from source instead? `git clone` this repo, then `npm install && npm run build`.
 
 3. **Configure**
 
@@ -72,9 +77,13 @@ The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Taka
 
 ### Prerequisites
 
-- **UE4SS** - Download from [UE4SS Releases](https://github.com/UE4SS-RE/RE-UE4SS/releases)
-  - Get the latest `UE4SS_v3.x.x.zip` release
-  - Version 3.0.0 or higher recommended
+- **UE4SS (Palworld-specific build)** - Download `UE4SS-Palworld.zip` from
+  [Okaetsu's RE-UE4SS `experimental-palworld` release](https://github.com/Okaetsu/RE-UE4SS/releases/tag/experimental-palworld)
+  - ⚠️ **Do NOT use the generic/mainline UE4SS** — since Palworld patch `0.4.1.5`
+    the engine changed and only the Palworld-specific build works. The generic
+    build will crash the server on startup.
+  - If you previously installed another UE4SS, delete the old `dwmapi.dll` and
+    `ue4ss` folder from `Pal\Binaries\Win64\` before installing this one.
 
 ### Installation Steps
 
@@ -92,7 +101,8 @@ The TakaroChat UE4SS mod enables real-time chat forwarding from Palworld to Taka
 
 2. **Install TakaroChat Mod**
 
-   a. Copy the `TakaroChat` folder from this repository to:
+   a. Copy the `TakaroChat` folder (included in the release download / this
+      repository) to:
       ```
       PalServer\Pal\Binaries\Win64\ue4ss\Mods\TakaroChat\
       ```
