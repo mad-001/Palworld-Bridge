@@ -31,33 +31,6 @@ local function SendToBridge(playerName, message, category)
     logger:log(3, string.format("Sent to bridge: %s: %s", playerName, message))
 end
 
--- Send to Discord webhook
-local function SendToDiscord(playerName, message, category)
-    if not config.EnableDiscordWebhook or config.DiscordWebhookURL == "" then
-        return
-    end
-
-    local categoryNames = {"Say", "Guild", "Global"}
-    local categoryEmojis = {"💬", "🏰", "🌍"}
-
-    local discordJson = string.format(
-        '{"content":"%s **[%s]** %s: %s"}',
-        categoryEmojis[category] or "📢",
-        categoryNames[category] or "Unknown",
-        Utils.EscapeJSON(playerName),
-        Utils.EscapeJSON(message)
-    )
-
-    local command = string.format(
-        'curl -s -X POST -H "Content-Type: application/json" -d "%s" %s',
-        discordJson:gsub('"', '\\"'),
-        config.DiscordWebhookURL
-    )
-
-    os.execute('start /B "" ' .. command .. ' >nul 2>&1')
-    logger:log(3, string.format("Sent to Discord: %s: %s", playerName, message))
-end
-
 -- Initialize chat hooks
 function Chat.Initialize()
     logger:log(2, "Registering chat hook...")
@@ -88,9 +61,6 @@ function Chat.Initialize()
 
                 -- Send to bridge
                 SendToBridge(playerName, message, category)
-
-                -- Send to Discord webhook
-                SendToDiscord(playerName, message, category)
             end)
 
             if not success then

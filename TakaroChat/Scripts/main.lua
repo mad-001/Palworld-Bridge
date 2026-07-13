@@ -1,6 +1,6 @@
 -- Takaro Chat Bridge for Palworld v1.5.0
--- Modular bidirectional chat integration between Palworld, Takaro, and Discord
--- Features: Chat, Events, Discord, Teleport, Location, Items, Inventory
+-- Modular chat integration between Palworld and Takaro
+-- Features: Chat, Events, Teleport, Location, Items, Inventory
 
 print("=== Takaro Chat Bridge v1.5.0 ===")
 
@@ -33,10 +33,6 @@ safeInit("Chat", Chat)
 local Events = require("events")
 safeInit("Events", Events)
 
--- Discord integration (bidirectional Discord <-> Game chat)
-local Discord = require("discord")
-safeInit("Discord", Discord)
-
 -- Teleport system (player teleportation via bridge)
 local Teleport = require("teleport")
 safeInit("Teleport", Teleport)
@@ -63,8 +59,6 @@ print("")
 print("==========================")
 print("Status:")
 print("  Bridge: " .. (config.EnableBridge and "Enabled" or "Disabled"))
-print("  Discord Webhook: " .. (config.EnableDiscordWebhook and "Enabled" or "Disabled"))
-print("  Discord->Game: " .. (config.EnableDiscordToGame and "Enabled" or "Disabled"))
 print("  Logging: " .. (config.EnableLogging and "Enabled" or "Disabled"))
 print("  Teleport: Enabled (coordinate + player-to-player)")
 print("  Location Lookup: Enabled (full X/Y/Z coordinates)")

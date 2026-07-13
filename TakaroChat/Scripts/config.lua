@@ -4,17 +4,6 @@ local config = {}
 config.BridgeURL = "http://localhost:3001/chat"
 config.EnableBridge = true
 
--- Discord Webhook Settings (optional - sends directly to Discord)
-config.EnableDiscordWebhook = false
-config.DiscordWebhookURL = "" -- Your Discord webhook URL
-
--- Discord to Game Settings
-config.EnableDiscordToGame = false
-config.DiscordBotToken = "" -- Discord bot token
-config.DiscordChannelID = "" -- Discord channel ID
-config.DiscordPollInterval = 2 -- Check Discord every N seconds
-config.DiscordMessageFormat = "[Discord] {name}: {message}"
-
 -- Logging Settings
 config.EnableLogging = true
 config.LogFile = "TakaroChat.log"
