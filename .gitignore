@@ -6,3 +6,5 @@ ProjectsToReference/
 *.tar.gz
 *.md.backup
 nul
+build/
+*.exe
