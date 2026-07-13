@@ -199,9 +199,6 @@ AdminPassword=YourSecurePassword</code></pre>
             <li>Download <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" target="_blank"><code>PalworldBridge.exe</code></a> and put it in your <strong>Palworld server folder</strong> &mdash; the folder that contains <code>Pal</code> (for example <code>C:\gameservers\palworld</code>).</li>
             <li>Right-click <code>PalworldBridge.exe</code> &rarr; <strong>Run as administrator</strong>. (Windows may warn "Windows protected your PC" &rarr; <strong>More info</strong> &rarr; <strong>Run anyway</strong>.)</li>
         </ol>
-        <div class="info-box">
-            On that first run the bridge sets itself up automatically: it reads your <code>PalWorldSettings.ini</code> to fill in the Palworld connection, creates <code>TakaroConfig.txt</code> next to itself, and installs the in-game chat mod. It will then say it needs your Takaro token &mdash; that's Step 4.
-        </div>
 
         <h2>Step 4 &mdash; Add Your Takaro Info</h2>
         <p>Open <code>TakaroConfig.txt</code> (now sitting next to the exe) in Notepad. The Palworld settings are already filled in for you &mdash; you only set two things:</p>
@@ -246,25 +243,8 @@ REGISTRATION_TOKEN=paste the token you copied in Step 1</code></pre>
             <li>If Windows blocked the files: right-click each &rarr; <strong>Properties</strong> &rarr; <strong>Unblock</strong> &rarr; <strong>Apply</strong>.</li>
         </ol>
 
-        <h3>2. Install the TakaroChat Mod</h3>
-        <p><strong>The bridge installs this for you.</strong> If UE4SS was already in place the first time you ran <code>PalworldBridge.exe</code>, the mod is already in <code>ue4ss\Mods\TakaroChat</code>. If you installed UE4SS afterward, just run <code>PalworldBridge.exe</code> once more and it adds the mod.</p>
-        <p>To install it by hand instead: download <code>TakaroChat.zip</code> from the <a href="https://github.com/mad-001/Palworld-Bridge/releases/latest" target="_blank">latest release</a>, unzip it, and copy the <code>TakaroChat</code> folder into your UE4SS mods folder so it looks like this:</p>
-        <pre><code>PalServer\Pal\Binaries\Win64\
-└── ue4ss\
-    └── Mods\
-        └── TakaroChat\
-            ├── enabled.txt
-            └── Scripts\
-                ├── main.lua
-                └── ...</code></pre>
-
-        <h3>3. Check the Chat Config</h3>
-        <p>The defaults work for most people. If your bridge uses a non-default port, open <code>TakaroChat/Scripts/config.lua</code> and match it:</p>
-        <pre><code>config.BridgeURL = "http://localhost:3001/chat"  -- must match the bridge's HTTP_PORT
-config.EnableBridge = true</code></pre>
-
-        <h3>4. Restart the Palworld Server</h3>
-        <p>Stop and start your server. UE4SS and the TakaroChat mod load automatically when the server boots.</p>
+        <h3>2. Restart the Palworld Server</h3>
+        <p>The bridge installs the chat mod for you when you run <code>PalworldBridge.exe</code> (with UE4SS in place). Then stop and start your Palworld server &mdash; UE4SS and the mod load on boot, and chat starts flowing.</p>
 
         <h2>Available Commands</h2>
         <p>Use these in the Takaro web console (not in-game):</p>
