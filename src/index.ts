@@ -1297,6 +1297,22 @@ async function handleTeleportPlayer(args: any) {
 }
 
 /**
+ * Split a command line into tokens, honoring double-quoted groups so that
+ * player names containing spaces can be passed as a single argument, e.g.
+ *   teleportplayer "kibo o hopu" 100 200 300
+ * Quotes are stripped; unquoted runs of non-whitespace are kept as-is.
+ */
+function tokenizeCommand(input: string): string[] {
+  const tokens: string[] = [];
+  const re = /"([^"]*)"|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(input)) !== null) {
+    tokens.push(m[1] !== undefined ? m[1] : m[2]);
+  }
+  return tokens;
+}
+
+/**
  * Execute command on Palworld server or console command
  */
 async function handleExecuteCommand(args: any) {
@@ -1305,9 +1321,9 @@ async function handleExecuteCommand(args: any) {
 
   logger.info(`Executing command: ${command}`);
 
-  // Parse command and arguments
-  const parts = command.trim().split(/\s+/);
-  const cmd = parts[0].toLowerCase();
+  // Parse command and arguments (double-quoted groups stay intact)
+  const parts = tokenizeCommand(command.trim());
+  const cmd = (parts[0] || '').toLowerCase();
   const cmdArguments = parts.slice(1);
 
   // Handle console commands
