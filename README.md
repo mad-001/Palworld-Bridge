@@ -48,7 +48,7 @@
    Create `TakaroConfig.txt`:
    ```ini
    # Takaro Connection
-   IDENTITY_TOKEN=YourIdentityToken
+   SERVER_NAME=Give your server a name
    REGISTRATION_TOKEN=YourRegistrationToken
 
    # Palworld Server Settings
@@ -197,7 +197,7 @@ Use these commands in the Takaro web console:
 
 ```ini
 # Required: Takaro authentication
-IDENTITY_TOKEN=your-identity-token
+SERVER_NAME=Give your server a name
 REGISTRATION_TOKEN=your-registration-token
 
 # Optional: Palworld server connection (defaults shown)
@@ -229,7 +229,7 @@ pm2 logs palworld-bridge
 ## 🐛 Troubleshooting
 
 ### Bridge won't connect to Takaro
-- Verify IDENTITY_TOKEN and REGISTRATION_TOKEN are correct
+- Verify SERVER_NAME and REGISTRATION_TOKEN are correct
 - Check bridge logs for connection errors
 - Ensure internet connectivity
 

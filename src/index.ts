@@ -121,7 +121,7 @@ setInterval(() => {
 
 // Configuration
 const TAKARO_WS_URL = 'wss://connect.takaro.io/';
-const IDENTITY_TOKEN = process.env.IDENTITY_TOKEN || '';
+const SERVER_NAME = process.env.SERVER_NAME || '';
 const REGISTRATION_TOKEN = process.env.REGISTRATION_TOKEN || '';
 
 // Palworld REST API Configuration
@@ -568,7 +568,7 @@ function sendIdentify() {
   const identifyMessage: any = {
     type: 'identify',
     payload: {
-      identityToken: IDENTITY_TOKEN
+      identityToken: SERVER_NAME
     }
   };
 

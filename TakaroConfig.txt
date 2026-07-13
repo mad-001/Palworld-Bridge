@@ -2,8 +2,11 @@
 #             TAKARO PALWORLD BRIDGE CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 #
-# Edit the values below with your server information.
-# After editing, just save this file - no need to rename it!
+# HOW TO SET THIS UP:
+#   1. Edit the values below with your server information.
+#   2. Lines starting with # are comments - leave them alone.
+#   3. Save this file when you're done (keep the name TakaroConfig.txt).
+#   4. Start the bridge.
 #
 # ═══════════════════════════════════════════════════════════════
 
@@ -11,29 +14,33 @@
 # TAKARO CONNECTION
 # ───────────────────────────────────────────────────────────────
 
-# Identity token from Takaro (identifies this server)
-IDENTITY_TOKEN=YourIdentityToken
+# A name for your server. This is how it will show up in Takaro.
+# Example: My Palworld Server
+SERVER_NAME=Give your server a name
 
-# Registration token from Takaro dashboard
-# Get this from: https://app.takaro.io/ when adding a new server
-REGISTRATION_TOKEN=YourRegistrationToken
+# Registration token from the Takaro dashboard.
+# Get this from https://app.takaro.io/ when you add a new server.
+REGISTRATION_TOKEN=Paste your registration token here
 
-# HTTP API port for the UE4SS chat mod (default: 3001)
+# HTTP API port for the in-game chat mod. Leave this as 3001 unless
+# you have a reason to change it.
 HTTP_PORT=3001
 
 # ───────────────────────────────────────────────────────────────
-# PALWORLD REST API SETTINGS
-# These must match your Palworld server configuration
+# PALWORLD SERVER SETTINGS
+# These must match your Palworld server's REST API settings
+# (found in PalWorldSettings.ini).
 # ───────────────────────────────────────────────────────────────
 
-# Palworld REST API host (use 127.0.0.1 if the bridge runs on the same machine as the server)
+# Where the Palworld server is. Leave this as 127.0.0.1 if the bridge
+# runs on the same machine as the Palworld server.
 PALWORLD_HOST=127.0.0.1
 
-# Palworld REST API port (default: 8212)
+# Palworld REST API port. Default is 8212.
 PALWORLD_PORT=8212
 
-# Admin username from PalWorldSettings.ini
+# Admin username (RESTAPIEnabled / AdminPassword settings in PalWorldSettings.ini).
 PALWORLD_USERNAME=admin
 
-# Admin password from PalWorldSettings.ini
-PALWORLD_PASSWORD=YourAdminPassword
+# Admin password from PalWorldSettings.ini.
+PALWORLD_PASSWORD=Your admin password here

@@ -221,7 +221,7 @@ npm run build</code></pre>
         <h3>4. Configure Bridge</h3>
         <p>Create <code>TakaroConfig.txt</code> in the bridge directory:</p>
         <pre><code># Takaro Connection
-IDENTITY_TOKEN=YourIdentityToken
+SERVER_NAME=Give your server a name
 REGISTRATION_TOKEN=YourRegistrationToken
 
 # Palworld Server Settings
@@ -318,7 +318,7 @@ config.SendCategories = {1, 2, 3}  -- Which categories to send</code></pre>
         <div class="warning-box">
             <strong>Bridge won't connect to Takaro:</strong>
             <ul>
-                <li>Check IDENTITY_TOKEN and REGISTRATION_TOKEN are correct</li>
+                <li>Check SERVER_NAME and REGISTRATION_TOKEN are correct</li>
                 <li>Check bridge logs for errors: <code>tail -f palworld-bridge.log</code> or <code>pm2 logs palworld-bridge</code></li>
                 <li>Verify internet connectivity</li>
             </ul>
