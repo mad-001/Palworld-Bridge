@@ -1,0 +1,39 @@
+# ═══════════════════════════════════════════════════════════════
+#             TAKARO PALWORLD BRIDGE CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+#
+# Edit the values below with your server information.
+# After editing, just save this file - no need to rename it!
+#
+# ═══════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────
+# TAKARO CONNECTION
+# ───────────────────────────────────────────────────────────────
+
+# Identity token from Takaro (identifies this server)
+IDENTITY_TOKEN=YourIdentityToken
+
+# Registration token from Takaro dashboard
+# Get this from: https://app.takaro.io/ when adding a new server
+REGISTRATION_TOKEN=YourRegistrationToken
+
+# HTTP API port for the UE4SS chat mod (default: 3001)
+HTTP_PORT=3001
+
+# ───────────────────────────────────────────────────────────────
+# PALWORLD REST API SETTINGS
+# These must match your Palworld server configuration
+# ───────────────────────────────────────────────────────────────
+
+# Palworld REST API host (use 127.0.0.1 if the bridge runs on the same machine as the server)
+PALWORLD_HOST=127.0.0.1
+
+# Palworld REST API port (default: 8212)
+PALWORLD_PORT=8212
+
+# Admin username from PalWorldSettings.ini
+PALWORLD_USERNAME=admin
+
+# Admin password from PalWorldSettings.ini
+PALWORLD_PASSWORD=YourAdminPassword
