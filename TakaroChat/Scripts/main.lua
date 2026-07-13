@@ -15,35 +15,44 @@ logger:log(2, "Loading TakaroChat modules...")
 
 -- Load and initialize modules
 -- Comment out any module to disable that feature
+-- Each module is initialized independently: a failure in one (e.g. a game
+-- update changing a hooked function) is logged and skipped, so it can never
+-- abort the whole mod and take the other features down with it.
+local function safeInit(name, mod)
+    local ok, err = pcall(function() mod.Initialize() end)
+    if not ok then
+        logger:log(1, string.format("[%s] Initialize failed (skipped): %s", name, tostring(err)))
+    end
+end
 
 -- Chat integration (required for basic functionality)
 local Chat = require("chat")
-Chat.Initialize()
+safeInit("Chat", Chat)
 
 -- Player events (connect/disconnect/death)
 local Events = require("events")
-Events.Initialize()
+safeInit("Events", Events)
 
 -- Discord integration (bidirectional Discord <-> Game chat)
 local Discord = require("discord")
-Discord.Initialize()
+safeInit("Discord", Discord)
 
 -- Teleport system (player teleportation via bridge)
 local Teleport = require("teleport")
-Teleport.Initialize()
+safeInit("Teleport", Teleport)
 
 -- Location lookup system (get player positions with Z coordinate)
 local Location = require("location")
-Location.Initialize()
+safeInit("Location", Location)
 
 -- Item giving system (allows giving items to players via bridge)
 local Items = require("items")
-Items.Initialize()
+safeInit("Items", Items)
 
 -- Inventory tracking (Fixed - now uses PlayerState:GetInventoryData)
 -- Enable in config.lua by setting config.EnableInventoryTracking = true
 local Inventory = require("inventory")
-Inventory.Initialize()
+safeInit("Inventory", Inventory)
 
 -- Guild data tracking (DISABLED - unable to get guild info, causes crashes)
 -- local Guild = require("guild")

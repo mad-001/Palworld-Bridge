@@ -62,36 +62,47 @@ end
 function Chat.Initialize()
     logger:log(2, "Registering chat hook...")
 
-    RegisterHook("/Script/Pal.PalPlayerState:EnterChat_Receive", function(playerState, chatData)
-        local success, err = pcall(function()
-            local message = chatData:get().Message:ToString()
-            local category = chatData:get().Category
-            local playerName = playerState:get().PlayerNamePrivate:ToString()
+    -- Palworld's server-side chat broadcast. (The old per-player
+    -- PalPlayerState:EnterChat_Receive RPC was removed in a game update.)
+    -- FPalChatMessage fields: Category (enum), Sender (FString), Message (FString).
+    local ok, regErr = pcall(function()
+        RegisterHook("/Script/Pal.PalGameStateInGame:BroadcastChatMessage", function(self, ChatMessageParam)
+            local success, err = pcall(function()
+                local chatMessage = ChatMessageParam:get()
+                local message = chatMessage.Message:ToString()
+                local playerName = chatMessage.Sender:ToString()
+                local category = tonumber(chatMessage.Category) or 0
 
-            -- Log the chat
-            logger:log(2, string.format("[%d] %s: %s", category, playerName, message))
+                -- Log the chat
+                logger:log(2, string.format("[%d] %s: %s", category, playerName, message))
 
-            -- Skip blacklisted messages
-            if Utils.IsBlacklisted(message) then
-                return
+                -- Skip blacklisted messages
+                if Utils.IsBlacklisted(message) then
+                    return
+                end
+
+                -- Only send if category is enabled
+                if not Utils.ShouldSendCategory(category) then
+                    return
+                end
+
+                -- Send to bridge
+                SendToBridge(playerName, message, category)
+
+                -- Send to Discord webhook
+                SendToDiscord(playerName, message, category)
+            end)
+
+            if not success then
+                logger:log(1, "Error in chat hook: " .. tostring(err))
             end
-
-            -- Only send if category is enabled
-            if not Utils.ShouldSendCategory(category) then
-                return
-            end
-
-            -- Send to bridge
-            SendToBridge(playerName, message, category)
-
-            -- Send to Discord webhook
-            SendToDiscord(playerName, message, category)
         end)
-
-        if not success then
-            logger:log(1, "Error in chat hook: " .. tostring(err))
-        end
     end)
+
+    if not ok then
+        logger:log(1, "Failed to register chat hook (BroadcastChatMessage not found): " .. tostring(regErr))
+        return
+    end
 
     logger:log(2, "Chat hook registered")
 end
