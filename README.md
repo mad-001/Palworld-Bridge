@@ -14,6 +14,8 @@
 - **Player Management** - Ban, kick, and manage players by name
 - **Server Control** - Save, shutdown, stop, and announce commands
 - **Chat Integration** - In-game chat forwarding to Takaro/Discord (UE4SS mod)
+- **Item Catalog** - 1891 Palworld items exposed to Takaro, so the shop item
+  picker and `giveItem` work (see [Item catalog](#-item-catalog))
 
 ## 📥 Installation
 
@@ -183,6 +185,28 @@ Use these commands in the Takaro web console:
 | `ban <player_name>` | Ban a player by name |
 | `kick <player_name>` | Kick a player by name |
 | `unban <steam_id>` | Unban a player by Steam ID |
+
+## 🎒 Item catalog
+
+The Palworld REST API has no item endpoint, so the bridge ships its own catalog
+and answers Takaro's `listItems` from it. Takaro therefore sees **1891 items**
+(`code` = the in-game `DT_ItemDataTable` row name, plus an English `name` and
+`description`), which is what the shop item picker and item-giving modules need.
+
+- Source of truth: `data/palworld-items.json`, embedded into the bundled JS (and
+  therefore into `PalworldBridge.exe`) at build time by
+  `scripts/generate-embedded-items.js`, which runs from `npm run build`.
+- **Item ids change with Palworld game patches.** Regenerate
+  `data/palworld-items.json` after a Palworld update and rebuild. The list is
+  derived from `DT_ItemDataTable` (rows flagged `bLegalInGame`) cross-checked
+  against paldb.cc display names and the wiki's item descriptions; the full
+  method is documented in `palworld-items.SOURCES.md` alongside the data set.
+- `giveItem` validates the requested code against this catalog before touching
+  the in-game mod, and returns `Unknown item code: <code>` for anything not in
+  it. This matters because the UE4SS mod cannot validate ids at runtime: an
+  unknown `FName` makes `RequestAddItem` silently do nothing. The mod now
+  reports the *real* outcome back to the bridge (player offline, no inventory
+  data, etc.) instead of always claiming success.
 
 ## 🔌 Supported API Endpoints
 

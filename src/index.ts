@@ -7,6 +7,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { EMBEDDED_MOD } from './embedded-mod';
+import { items as PALWORLD_ITEMS, itemCodes as PALWORLD_ITEM_CODES } from './embedded-items';
 
 const execPromise = promisify(exec);
 
@@ -959,8 +960,7 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'listItems':
-        // Palworld API doesn't provide item list, return empty array
-        responsePayload = [];
+        responsePayload = handleListItems();
         break;
 
       case 'listEntities':
@@ -1399,6 +1399,23 @@ async function handleGetPlayerInventory(args: any) {
 }
 
 /**
+ * List the Palworld item catalog for Takaro.
+ *
+ * The Palworld REST API exposes no item list, so the bridge ships a static,
+ * curated catalog (data/palworld-items.json, embedded at build time). Ids come
+ * from DT_ItemDataTable and change with game patches - regenerate after each
+ * Palworld update (see scripts/generate-embedded-items.js).
+ */
+function handleListItems() {
+  logger.debug(`[ITEMS] listItems -> ${PALWORLD_ITEMS.length} items`);
+  return PALWORLD_ITEMS.map((item) => ({
+    code: item.code,
+    name: item.name,
+    description: item.description
+  }));
+}
+
+/**
  * Give an item to a player
  */
 async function handleGiveItem(args: any) {
@@ -1416,6 +1433,14 @@ async function handleGiveItem(args: any) {
     if (!itemId) {
       logger.error('[ITEMS] No item ID provided for giveItem');
       return { success: false, error: 'No item ID provided' };
+    }
+
+    // The UE4SS mod cannot validate item ids at runtime: RequestAddItem silently
+    // no-ops on an unknown FName. The embedded catalog is the only guard, so
+    // reject unknown codes here before touching the Lua queue.
+    if (!PALWORLD_ITEM_CODES.has(itemId)) {
+      logger.warn(`[ITEMS] Unknown item code: ${itemId}`);
+      return { success: false, error: `Unknown item code: ${itemId}` };
     }
 
     // Get player's name from cache
