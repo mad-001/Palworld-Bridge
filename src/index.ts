@@ -949,7 +949,7 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'getPlayers':
-        responsePayload = await handleGetPlayers();
+        responsePayload = await handleGetPlayers(false, true);
         break;
 
       case 'getPlayer':
@@ -1169,7 +1169,7 @@ function startServerMonitoring() {
 /**
  * Get current players from Palworld server
  */
-async function handleGetPlayers(detectChanges: boolean = false) {
+async function handleGetPlayers(detectChanges: boolean = false, throwOnError: boolean = false) {
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
 
@@ -1243,6 +1243,12 @@ async function handleGetPlayers(detectChanges: boolean = false) {
     return mappedPlayers;
   } catch (error: any) {
     logger.error(`Failed to get players: ${error.message}`);
+    if (throwOnError) {
+      // Takaro's Generic adapter turns an { error } response into a BadRequestError, which
+      // is what we want: an empty array would tell Takaro every player just went offline
+      // (firing player-disconnected + ending sessions) because of a momentary REST hiccup.
+      throw new Error(`Failed to list players: ${error.message}`);
+    }
     return [];
   }
 }
@@ -1274,7 +1280,7 @@ async function handleGetPlayer(args: any) {
     return null;
   }
 
-  const players = await handleGetPlayers();
+  const players = await handleGetPlayers(false, true);
   const match = players.find((p: any) =>
     p.gameId === playerId ||
     p.steamId === playerId ||
@@ -1377,17 +1383,17 @@ const activeLocationRequests = new Set<string>();
 async function handleGetPlayerLocation(args: any) {
   try {
     const locationArgs = typeof args === 'string' ? JSON.parse(args) : args;
-    const playerId = locationArgs.gameId || locationArgs.playerId || locationArgs.userId;
+    const playerId = resolvePlayerId(locationArgs);
 
     if (!playerId) {
-      logger.error('No player ID provided for getPlayerLocation');
-      return { x: 0, y: 0, z: 0 };
+      logger.error(`No player ID provided for getPlayerLocation (args: ${describeArgs(locationArgs)})`);
+      return null;
     }
 
     // Check if request already in progress for this player
     if (activeLocationRequests.has(playerId)) {
       logger.debug(`[LOCATION] Request already in progress for ${playerId}, skipping duplicate`);
-      return { x: 0, y: 0, z: 0 };
+      return null;
     }
 
     // Get player's actual name from cache (Lua needs display name, not Steam ID)
@@ -1406,7 +1412,7 @@ async function handleGetPlayerLocation(args: any) {
 
     if (!cachedPlayer) {
       logger.warn(`[LOCATION] Player ${playerId} not in cache`);
-      return { x: 0, y: 0, z: 0 };
+      return null;
     }
 
     // Mark request as active
@@ -1464,16 +1470,16 @@ async function handleGetPlayerLocation(args: any) {
       logger.debug(`[LOCATION] Removed timed out request ${requestId} from queue`);
     }
     logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
-    return { x: 0, y: 0, z: 0 };
+    return null;
 
   } catch (error: any) {
     // Remove from active requests on error
-    if (args && (args.gameId || args.playerId || args.userId)) {
-      const playerId = args.gameId || args.playerId || args.userId;
-      activeLocationRequests.delete(playerId);
+    const failedId = resolvePlayerId(typeof args === 'string' ? JSON.parse(args) : args);
+    if (failedId) {
+      activeLocationRequests.delete(failedId);
     }
     logger.error(`Failed to get player location: ${error.message}`);
-    return { x: 0, y: 0, z: 0 };
+    return null;
   }
 }
 
@@ -2016,7 +2022,7 @@ async function handleExecuteCommand(args: any) {
       try {
         const playerIdentifier = cmdArguments.join(' ');
         const location = await handleGetPlayerLocation({ gameId: playerIdentifier, playerId: playerIdentifier, userId: playerIdentifier });
-        if (location.x === 0 && location.y === 0 && location.z === 0) {
+        if (!location) {
           return { success: false, rawResult: `Unable to get location for "${playerIdentifier}"` };
         }
         return {
