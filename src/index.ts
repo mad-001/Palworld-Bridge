@@ -315,6 +315,8 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 60000; // 60 seconds
 const BASE_RECONNECT_DELAY = 3000; // 3 seconds
 const SERVER_CHECK_INTERVAL = 5000; // Check server every 5 seconds
+const SERVER_PROBE_TIMEOUT = 2000; // REST /v1/api/info probe timeout
+let loggedProcessUpRestDown = false;
 
 // Player inventory cache
 interface PlayerInventory {
@@ -934,24 +936,75 @@ function clearBridgeState() {
   logger.info('[STATE RESET] Bridge state cleared successfully');
 }
 
-async function checkServerStatus() {
+/**
+ * Probe the Palworld REST API to decide whether the server is up.
+ *
+ * The original implementation shelled out to Windows `tasklist` every 5 s, which
+ * on any non-Windows host fails forever ("tasklist: not found"), pinning
+ * testReachability to false even while the REST API answers 200. Reproduced on
+ * Linux 2026-09-15: 12 errors/min and `connectable:false` while
+ * GET /v1/api/info returned 200.
+ */
+async function probeRestApi(): Promise<boolean> {
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+    const response = await axios({
+      method: 'get',
+      url: `${PALWORLD_BASE_URL}/v1/api/info`,
+      timeout: SERVER_PROBE_TIMEOUT,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Basic ${authString}`
+      },
+      validateStatus: () => true
+    });
+    if (response.status === 200) return true;
+    logger.debug(`Palworld REST probe returned HTTP ${response.status}`);
+    return false;
+  } catch (error: any) {
+    logger.debug(`Palworld REST probe failed: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Supplementary Windows-only check: is the server process alive even though the
+ * REST API is not answering yet? Used purely to log a clearer one-shot hint.
+ */
+async function isServerProcessAlive(): Promise<boolean> {
+  if (process.platform !== 'win32') return false;
   try {
     const { stdout } = await execPromise('tasklist /FI "IMAGENAME eq PalServer-Win64-Shipping-Cmd.exe" /NH');
-    const wasRunning = isServerRunning;
     // tasklist truncates long names, so check for the truncated version
-    isServerRunning = stdout.includes('PalServer-Win64-Shipping');
-
-    if (isServerRunning !== wasRunning) {
-      logger.info(`Palworld server status changed: ${isServerRunning ? 'ONLINE' : 'OFFLINE'}`);
-
-      // If server just came back online after being offline, clear stale state
-      if (isServerRunning && !wasRunning) {
-        clearBridgeState();
-      }
-    }
+    return stdout.includes('PalServer-Win64-Shipping');
   } catch (error: any) {
-    logger.error(`Failed to check Palworld server process: ${error.message}`);
-    isServerRunning = false;
+    logger.debug(`tasklist check failed: ${error.message}`);
+    return false;
+  }
+}
+
+async function checkServerStatus() {
+  const wasRunning = isServerRunning;
+  const restUp = await probeRestApi();
+
+  if (!restUp && await isServerProcessAlive()) {
+    if (!loggedProcessUpRestDown) {
+      loggedProcessUpRestDown = true;
+      logger.info('Palworld process is up, REST API not ready (waiting for the REST API to answer)');
+    }
+  } else if (restUp) {
+    loggedProcessUpRestDown = false;
+  }
+
+  isServerRunning = restUp;
+
+  if (isServerRunning !== wasRunning) {
+    logger.info(`Palworld server status changed: ${isServerRunning ? 'ONLINE' : 'OFFLINE'}`);
+
+    // If server just came back online after being offline, clear stale state
+    if (isServerRunning && !wasRunning) {
+      clearBridgeState();
+    }
   }
 }
 
