@@ -893,6 +893,10 @@ async function handleTakaroRequest(message: any) {
         responsePayload = await handleGetPlayers();
         break;
 
+      case 'getPlayer':
+        responsePayload = await handleGetPlayer(args);
+        break;
+
       case 'getServerInfo':
         responsePayload = await handleGetServerInfo();
         break;
@@ -939,6 +943,11 @@ async function handleTakaroRequest(message: any) {
 
       case 'stopServer':
         responsePayload = await handleStopServer();
+        break;
+
+      case 'shutdown':
+        // Takaro's Generic adapter calls shutdown() with no arguments.
+        responsePayload = await shutdownServer(10, 'Server shutting down (Takaro)');
         break;
 
       case 'listBans':
@@ -1175,6 +1184,36 @@ async function handleGetPlayers(detectChanges: boolean = false) {
     logger.error(`Failed to get players: ${error.message}`);
     return [];
   }
+}
+
+/**
+ * Look up a single player. Takaro sends IPlayerReferenceDTO.toJSON() = { gameId }.
+ * Returns the same player shape as getPlayers, or null when the player is not online
+ * (Takaro's adapter maps a falsy response to null rather than a validation error).
+ */
+async function handleGetPlayer(args: any) {
+  const playerArgs = typeof args === 'string' ? JSON.parse(args) : args;
+  const playerId = resolvePlayerId(playerArgs);
+
+  if (!playerId) {
+    logger.warn(`[PLAYER] No player ID provided for getPlayer (args: ${describeArgs(playerArgs)})`);
+    return null;
+  }
+
+  const players = await handleGetPlayers();
+  const match = players.find((p: any) =>
+    p.gameId === playerId ||
+    p.steamId === playerId ||
+    p.palworldPlayerId === playerId ||
+    p.name.toLowerCase() === String(playerId).toLowerCase()
+  );
+
+  if (!match) {
+    logger.debug(`[PLAYER] getPlayer: ${playerId} is not online`);
+    return null;
+  }
+
+  return match;
 }
 
 /**
@@ -1667,8 +1706,10 @@ async function handleExecuteCommand(args: any) {
   stop - Stop server immediately
   ban <player> - Ban a player by name
   kick <player> - Kick a player by name
-  unban <steamid> - Unban a player by Steam ID
-  teleportplayer <source> <target> - Teleport source player to target player`
+  unban <steamid|name> - Unban a player by Steam ID or by name
+  teleportplayer <source> <target> - Teleport source player to target player
+  teleportplayer <source> <x> <y> <z> - Teleport source player to coordinates
+  location <player> - Show a player's current coordinates`
       };
 
     case 'players':
@@ -1766,46 +1807,31 @@ async function handleExecuteCommand(args: any) {
         return { success: false, rawResult: `Error: ${error.message}` };
       }
 
-    case 'shutdown':
-      try {
-        let waittime = 10;
-        let shutdownMsg = 'Server shutting down';
+    case 'shutdown': {
+      let waittime = 10;
+      let shutdownMsg = 'Server shutting down';
 
-        // Check if first argument is a number
-        if (cmdArguments.length > 0) {
-          const parsedTime = parseInt(cmdArguments[0]);
-          if (!isNaN(parsedTime)) {
-            // First arg is a number, use it as waittime
-            waittime = parsedTime;
-            // Everything after is the message
-            if (cmdArguments.length > 1) {
-              shutdownMsg = cmdArguments.slice(1).join(' ');
-            }
-          } else {
-            // First arg is NOT a number, all args are the message
-            shutdownMsg = cmdArguments.join(' ');
+      // Check if first argument is a number
+      if (cmdArguments.length > 0) {
+        const parsedTime = parseInt(cmdArguments[0]);
+        if (!isNaN(parsedTime)) {
+          // First arg is a number, use it as waittime
+          waittime = parsedTime;
+          // Everything after is the message
+          if (cmdArguments.length > 1) {
+            shutdownMsg = cmdArguments.slice(1).join(' ');
           }
+        } else {
+          // First arg is NOT a number, all args are the message
+          shutdownMsg = cmdArguments.join(' ');
         }
-
-        const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
-        const data = JSON.stringify({ waittime, message: shutdownMsg });
-        const config = {
-          method: 'post',
-          maxBodyLength: Infinity,
-          url: `${PALWORLD_BASE_URL}/v1/api/shutdown`,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Basic ${authString}`
-          },
-          data: data
-        };
-        await axios(config);
-        logger.info('Server shutdown initiated');
-        return { success: true, rawResult: `Server shutting down in ${waittime} seconds: "${shutdownMsg}"` };
-      } catch (error: any) {
-        logger.error(`Failed to shutdown server: ${error.message}`);
-        return { success: false, rawResult: `Error: ${error.message}` };
       }
+
+      const result = await shutdownServer(waittime, shutdownMsg);
+      return result.success
+        ? { success: true, rawResult: result.message }
+        : { success: false, rawResult: `Error: ${result.error}` };
+    }
 
     case 'stop':
       try {
@@ -2066,6 +2092,32 @@ async function handleUnbanPlayer(args: any) {
     return { success: true };
   } catch (error: any) {
     logger.error(`Failed to unban player ${userId}: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Graceful shutdown via Palworld's REST API. Shared by the console `shutdown` command and
+ * Takaro's `shutdown` action (A15: v1.7.6 answered "Unknown action: shutdown").
+ */
+async function shutdownServer(waittime: number, message: string) {
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+    const config = {
+      method: 'post',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/shutdown`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${authString}`
+      },
+      data: JSON.stringify({ waittime, message })
+    };
+    await axios(config);
+    logger.info(`Server shutdown initiated (${waittime}s): "${message}"`);
+    return { success: true, message: `Server shutting down in ${waittime} seconds: "${message}"` };
+  } catch (error: any) {
+    logger.error(`Failed to shutdown server: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
