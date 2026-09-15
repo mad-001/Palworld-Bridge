@@ -11,7 +11,8 @@
 - **Console Commands** - Run commands directly from Takaro's web console
 - **Real-time Player Tracking** - Monitor player locations and activity
 - **WebSocket Connection** - Instant server events and status updates
-- **Player Management** - Ban, kick, and manage players by name
+- **Player Management** - Ban, kick, and manage players by name or Steam ID, with a
+  local ban ledger so Takaro's ban list is populated
 - **Server Control** - Save, shutdown, stop, and announce commands
 - **Chat Integration** - In-game chat forwarding to Takaro/Discord (UE4SS mod)
 - **Item Catalog** - 1891 Palworld items exposed to Takaro, so the shop item
@@ -184,7 +185,42 @@ Use these commands in the Takaro web console:
 | `stop` | Stop server immediately |
 | `ban <player_name>` | Ban a player by name |
 | `kick <player_name>` | Kick a player by name |
-| `unban <steam_id>` | Unban a player by Steam ID |
+| `unban <steam_id\|player_name>` | Unban a player by Steam ID or by name |
+| `teleportplayer <source> <target>` | Teleport a player to another player |
+| `teleportplayer <source> <x> <y> <z>` | Teleport a player to coordinates |
+| `location <player>` | Show a player's current coordinates |
+
+## 🎮 Takaro actions
+
+Everything Takaro's Generic game server can ask for, and what the bridge does with it:
+
+| Action | Supported | Notes |
+|---|---|---|
+| `testReachability` | yes | Uses the Palworld REST API, so it also works off-box |
+| `getPlayers` | yes | Fails loudly on a REST error instead of reporting an empty server |
+| `getPlayer` | yes | Single player lookup by `gameId`; `null` when not online |
+| `getPlayerLocation` | yes | Needs the `TakaroChat` UE4SS mod; `null` (not `0,0,0`) on failure |
+| `getPlayerInventory` | yes | Needs the UE4SS mod and `EnableInventoryTracking` |
+| `sendMessage` | yes | Mapped to the REST `announce` endpoint |
+| `executeConsoleCommand` | yes | See the console command table above |
+| `giveItem` | yes | Needs the UE4SS mod; Palworld has no item quality tiers |
+| `teleportPlayer` | yes | Needs the UE4SS mod; coordinates or another player |
+| `kickPlayer` / `banPlayer` / `unbanPlayer` | yes | Takaro's reason is used as the in-game message |
+| `listBans` | yes | Bans the bridge issued (see below) |
+| `listItems` | yes | 1891 item catalog |
+| `shutdown` | yes | REST `/v1/api/shutdown` with a 10 second countdown |
+| `listEntities` / `listLocations` / `getMapInfo` | no | Palworld exposes no such data |
+
+Notes on identity and bans:
+
+- Palworld reports accounts as `steam_7656...`. The bridge keeps that raw form as the
+  player's `gameId` (stable identity) but reports `steamId` as the bare 17-digit Steam64
+  id, which is what Takaro's Steam profile enrichment needs.
+- Palworld's REST API can ban and unban but offers no way to read the ban list, so the
+  bridge keeps its own ledger in `bans.json` beside the bridge and serves that to
+  `listBans`. Bans made outside the bridge are not listed. Palworld's ban endpoint has no
+  expiry parameter either, so a temporary ban from Takaro is permanent in-game and only
+  Takaro tracks when it should end.
 
 ## 🎒 Item catalog
 
