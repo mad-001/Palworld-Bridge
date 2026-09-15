@@ -58,6 +58,11 @@ REGISTRATION_TOKEN=Paste your registration token here
 # HTTP port for the in-game chat mod (leave as 3001).
 HTTP_PORT=3001
 
+# Set to 1 for verbose troubleshooting logs: every WebSocket frame exchanged
+# with Takaro is written to the log file (your registration token is redacted).
+# Leave at 0 for normal use - debug logging is noisy.
+TAKARO_DEBUG=0
+
 # Palworld REST API settings (auto-filled from PalWorldSettings.ini).
 PALWORLD_HOST=127.0.0.1
 PALWORLD_PORT=8212
@@ -135,8 +140,12 @@ function writeStopFile(): void {
   } catch { /* non-fatal */ }
 }
 
+const setupLines: string[] = [];
 function autoSetup(): void {
-  const log = (m: string) => console.log(`[setup] ${m}`);
+  const log = (m: string) => {
+    console.log(`[setup] ${m}`);
+    setupLines.push(m);
+  };
   writeStopFile();
   const gameRoot = findGameRoot();
   if (!gameRoot) {
@@ -175,7 +184,10 @@ function autoSetup(): void {
 
 // Load configuration from TakaroConfig.txt
 function loadConfig() {
-  try { autoSetup(); } catch (e: any) { console.error(`[setup] skipped: ${e.message}`); }
+  try { autoSetup(); } catch (e: any) {
+    console.error(`[setup] skipped: ${e.message}`);
+    setupLines.push(`skipped: ${e.message}`);
+  }
 
   if (!fs.existsSync(CONFIG_PATH)) {
     console.error('ERROR: TakaroConfig.txt not found!');
@@ -224,9 +236,15 @@ function getLogFilename(): string {
 let currentLogFilename = getLogFilename();
 let fileTransport = new winston.transports.File({ filename: currentLogFilename });
 
+// TAKARO_DEBUG=1 (TakaroConfig.txt or environment) turns on verbose logging:
+// winston drops to `debug` level and every Takaro WebSocket frame is logged.
+const TAKARO_DEBUG = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.TAKARO_DEBUG || '').trim().toLowerCase()
+);
+
 // Configure logger
 const logger = winston.createLogger({
-  level: 'info',
+  level: TAKARO_DEBUG ? 'debug' : 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.printf(({ timestamp, level, message }) => {
@@ -238,6 +256,14 @@ const logger = winston.createLogger({
     fileTransport
   ]
 });
+
+// The [setup] lines are printed to the console before the logger exists (they
+// run from loadConfig()). Mirror them into winston so they land in the log file
+// too - previously they were console-only and invisible in bug reports.
+for (const line of setupLines) {
+  logger.info(`[setup] ${line}`);
+}
+setupLines.length = 0;
 
 // Function to clean up old log files (keep only 10 most recent)
 function cleanupOldLogs() {
@@ -690,6 +716,25 @@ function initPalworldApi() {
 /**
  * Connect to Takaro WebSocket server
  */
+const WS_FRAME_MAX_CHARS = 2000;
+
+/**
+ * Log one raw Takaro WebSocket frame when TAKARO_DEBUG is on.
+ * The registration token is redacted and long frames are truncated so the log
+ * stays readable and never leaks a secret.
+ */
+function logWsFrame(direction: 'SEND' | 'RECV', raw: string) {
+  if (!TAKARO_DEBUG) return;
+  let safe = raw.replace(/("registrationToken"\s*:\s*)"[^"]*"/g, '$1"<redacted>"');
+  if (REGISTRATION_TOKEN) {
+    safe = safe.split(REGISTRATION_TOKEN).join('<redacted>');
+  }
+  if (safe.length > WS_FRAME_MAX_CHARS) {
+    safe = `${safe.slice(0, WS_FRAME_MAX_CHARS)}... [truncated, ${safe.length} chars]`;
+  }
+  logger.debug(`WS ${direction} ${safe}`);
+}
+
 function connectToTakaro() {
   if (takaroWs && takaroWs.readyState === WebSocket.OPEN) {
     logger.info('Already connected to Takaro');
@@ -708,6 +753,7 @@ function connectToTakaro() {
 
   takaroWs.on('message', (data: WebSocket.Data) => {
     try {
+      logWsFrame('RECV', data.toString());
       const message = JSON.parse(data.toString());
       handleTakaroMessage(message);
     } catch (error) {
@@ -748,7 +794,9 @@ function sendIdentify() {
   }
 
   logger.info('Sending identify message to Takaro');
-  takaroWs.send(JSON.stringify(identifyMessage));
+  const rawIdentify = JSON.stringify(identifyMessage);
+  logWsFrame('SEND', rawIdentify);
+  takaroWs.send(rawIdentify);
 }
 
 /**
@@ -1986,7 +2034,9 @@ function sendToTakaro(message: any) {
   }
 
   try {
-    takaroWs.send(JSON.stringify(message));
+    const raw = JSON.stringify(message);
+    logWsFrame('SEND', raw);
+    takaroWs.send(raw);
 
     if (message.type === 'response') {
       metrics.responsesSent++;
