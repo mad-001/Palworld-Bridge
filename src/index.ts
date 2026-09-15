@@ -8,7 +8,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { EMBEDDED_MOD } from './embedded-mod';
 import { items as PALWORLD_ITEMS, itemCodes as PALWORLD_ITEM_CODES } from './embedded-items';
-import { resolvePlayerId, resolveTargetPlayerId, describeArgs } from './player-args';
+import { resolvePlayerId, resolveTargetPlayerId, describeArgs, bareSteamId } from './player-args';
 
 const execPromise = promisify(exec);
 
@@ -1132,7 +1132,9 @@ async function handleGetPlayers(detectChanges: boolean = false) {
       name: String(player.name), // Character name (for Takaro)
       accountName: String(player.accountName || player.name), // Steam account name (for Lua - what PlayerNamePrivate returns)
       platformId: `palworld:${player.userId}`,
-      steamId: String(player.userId),
+      // gameId stays the raw Palworld userId (stable identity); Takaro's Steam enrichment
+      // needs the bare 17-digit Steam64 id, not Palworld's "steam_" prefixed form.
+      steamId: bareSteamId(String(player.userId)),
       palworldPlayerId: String(player.playerId || ''), // GUID from Palworld API - matches PlayerState.PlayerId in UE4SS
       ip: player.ip || undefined,
       ping: player.ping !== undefined ? player.ping : undefined,
