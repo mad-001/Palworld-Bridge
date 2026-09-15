@@ -404,6 +404,7 @@ interface ItemResponse {
   itemId: string;
   quantity: number;
   success: boolean;
+  error?: string;
   timestamp: string;
 }
 const itemRequestQueue: ItemRequest[] = [];
@@ -563,7 +564,7 @@ app.post('/item-response', (req, res) => {
   try {
     const response: ItemResponse = req.body;
     itemResponseQueue.push(response);
-    logger.info(`[ITEMS] ${response.success ? 'Gave' : 'Failed to give'} ${response.quantity}x ${response.itemId} to ${response.playerName}`);
+    logger.info(`[ITEMS] ${response.success ? 'Gave' : 'Failed to give'} ${response.quantity}x ${response.itemId} to ${response.playerName}${response.success ? '' : ` (${response.error || 'no reason given'})`}`);
     res.status(200).json({ success: true });
   } catch (error: any) {
     logger.error(`Item response endpoint error: ${error.message}`);
@@ -1485,8 +1486,14 @@ async function handleGiveItem(args: any) {
           itemRequestQueue.splice(queueIndex, 1);
         }
 
+        if (!response.success) {
+          const reason = response.error || 'Item give failed in game';
+          logger.warn(`[ITEMS] Request ${requestId} failed: ${reason}`);
+          return { success: false, error: reason };
+        }
+
         return {
-          success: response.success,
+          success: true,
           playerName: response.playerName,
           itemId: response.itemId,
           quantity: response.quantity
