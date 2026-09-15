@@ -1680,7 +1680,8 @@ async function handleTeleportPlayer(args: any) {
     // Find source player
     const source = players.find((p: any) =>
       p.name.toLowerCase() === sourcePlayer.toLowerCase() ||
-      p.gameId === sourcePlayer
+      p.gameId === sourcePlayer ||
+      p.steamId === sourcePlayer
     );
 
     if (!source) {
@@ -1710,7 +1711,8 @@ async function handleTeleportPlayer(args: any) {
     // Handle player-to-player teleport
     const target = players.find((p: any) =>
       p.name.toLowerCase() === targetPlayer!.toLowerCase() ||
-      p.gameId === targetPlayer
+      p.gameId === targetPlayer ||
+      p.steamId === targetPlayer
     );
 
     if (!target) {
