@@ -215,7 +215,19 @@ PALWORLD_HOST=127.0.0.1
 PALWORLD_PORT=8212
 PALWORLD_USERNAME=admin
 PALWORLD_PASSWORD=your-admin-password
+
+# Optional: verbose troubleshooting logs (default 0)
+TAKARO_DEBUG=0
 ```
+
+`TAKARO_DEBUG=1` sets the log level to debug and writes every WebSocket frame
+exchanged with Takaro to the log file as `WS SEND ...` / `WS RECV ...` (frames
+are truncated at 2000 characters and your registration token is redacted). It
+is noisy - turn it back to `0` once you have what you need.
+
+The bridge decides whether your Palworld server is up by polling its REST API
+(`GET /v1/api/info`) every 5 seconds, so it also works when the bridge runs on
+Linux or in a container; the Windows process check is only an extra hint.
 
 ### Getting Takaro Tokens
 
