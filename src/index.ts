@@ -414,6 +414,65 @@ const itemResponseQueue: ItemResponse[] = [];
 // Map playerName to steamId for location request tracking
 const playerNameToSteamId = new Map<string, string>();
 
+/**
+ * Local ban ledger.
+ *
+ * Palworld's REST API can ban and unban (POST /v1/api/ban, /v1/api/unban) but exposes no way
+ * to READ the ban list, and the server only persists it in Pal/Saved/SaveGames/.../banlist.txt
+ * in an undocumented format. So the bridge keeps its own ledger of the bans it issued and
+ * serves that to Takaro's `listBans`. Bans made outside the bridge are not visible.
+ */
+interface BanRecord {
+  gameId: string;
+  name: string;
+  reason: string;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+const BANS_PATH = path.join(APP_DIR, 'bans.json');
+const banLedger = new Map<string, BanRecord>();
+
+function loadBanLedger(): void {
+  try {
+    if (!fs.existsSync(BANS_PATH)) return;
+    const parsed = JSON.parse(fs.readFileSync(BANS_PATH, 'utf-8'));
+    if (!Array.isArray(parsed)) return;
+    for (const entry of parsed) {
+      if (entry && typeof entry.gameId === 'string') {
+        banLedger.set(entry.gameId, {
+          gameId: entry.gameId,
+          name: typeof entry.name === 'string' && entry.name ? entry.name : entry.gameId,
+          reason: typeof entry.reason === 'string' ? entry.reason : 'Banned',
+          createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString(),
+          expiresAt: typeof entry.expiresAt === 'string' ? entry.expiresAt : null
+        });
+      }
+    }
+  } catch (error: any) {
+    // A corrupt ledger must never stop the bridge from starting.
+  }
+}
+
+function saveBanLedger(): void {
+  try {
+    fs.writeFileSync(BANS_PATH, JSON.stringify([...banLedger.values()], null, 2));
+  } catch (error: any) {
+    logger.error(`[BAN] Failed to persist ${BANS_PATH}: ${error.message}`);
+  }
+}
+
+/** Resolve a ban-ledger entry by gameId or by (case-insensitive) player name. */
+function findBanRecord(idOrName: string): BanRecord | undefined {
+  const direct = banLedger.get(idOrName);
+  if (direct) return direct;
+  const lower = idOrName.toLowerCase();
+  for (const record of banLedger.values()) {
+    if (record.name.toLowerCase() === lower) return record;
+  }
+  return undefined;
+}
+
 // Metrics
 const metrics = {
   requestsReceived: 0,
@@ -951,7 +1010,7 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'listBans':
-        responsePayload = [];
+        responsePayload = handleListBans();
         break;
 
       case 'getPlayerLocation':
@@ -1186,6 +1245,19 @@ async function handleGetPlayers(detectChanges: boolean = false) {
     logger.error(`Failed to get players: ${error.message}`);
     return [];
   }
+}
+
+/**
+ * Bans the bridge issued, in Takaro's BanDTO shape:
+ *   { player: IGamePlayer (gameId + name required), reason: string, expiresAt: string | null }
+ */
+function handleListBans() {
+  return [...banLedger.values()].map((record) => ({
+    player: { gameId: record.gameId, name: record.name },
+    reason: record.reason,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt
+  }));
 }
 
 /**
@@ -1885,7 +1957,7 @@ async function handleExecuteCommand(args: any) {
 
     case 'unban':
       if (cmdArguments.length === 0) {
-        return { success: false, rawResult: 'Usage: unban <steam_id>' };
+        return { success: false, rawResult: 'Usage: unban <steam_id|player_name>' };
       }
       try {
         const userId = cmdArguments[0];
@@ -2050,6 +2122,21 @@ async function handleBanPlayer(args: any) {
     };
 
     const response = await axios(config);
+
+    const cached = playerCache.get(userId);
+    const name = (typeof banArgs?.player?.name === 'string' && banArgs.player.name)
+      || (typeof banArgs?.name === 'string' && banArgs.name)
+      || cached?.name
+      || userId;
+    banLedger.set(userId, {
+      gameId: userId,
+      name,
+      reason,
+      createdAt: new Date().toISOString(),
+      expiresAt: typeof banArgs?.expiresAt === 'string' ? banArgs.expiresAt : null
+    });
+    saveBanLedger();
+
     logger.info(`Player ${userId} banned successfully`);
     return { success: true };
   } catch (error: any) {
@@ -2064,7 +2151,10 @@ async function handleBanPlayer(args: any) {
 async function handleUnbanPlayer(args: any) {
   const unbanArgs = typeof args === 'string' ? JSON.parse(args) : args;
   // Takaro sends IGamePlayer.toJSON() (flat gameId); keep the nested shape working too.
-  const userId = resolvePlayerId(unbanArgs);
+  const requested = resolvePlayerId(unbanArgs);
+  // Allow unbanning by player name as well: the ledger remembers the name we banned.
+  const record = requested ? findBanRecord(requested) : undefined;
+  const userId = record ? record.gameId : requested;
 
   if (!userId) {
     logger.warn(`[UNBAN] No player ID provided for unbanPlayer (args: ${describeArgs(unbanArgs)})`);
@@ -2090,6 +2180,11 @@ async function handleUnbanPlayer(args: any) {
     };
 
     const response = await axios(config);
+
+    if (banLedger.delete(userId)) {
+      saveBanLedger();
+    }
+
     logger.info(`Player ${userId} unbanned successfully`);
     return { success: true };
   } catch (error: any) {
@@ -2345,5 +2440,10 @@ process.on('SIGTERM', () => {
   }
   process.exit(0);
 });
+
+loadBanLedger();
+if (banLedger.size > 0) {
+  logger.info(`[BAN] Loaded ${banLedger.size} ban(s) from ${BANS_PATH}`);
+}
 
 logger.info(`Palworld-Takaro Bridge v${VERSION} starting...`);
