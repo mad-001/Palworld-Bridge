@@ -314,6 +314,8 @@ let serverCheckInterval: NodeJS.Timeout | null = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 60000; // 60 seconds
 const BASE_RECONNECT_DELAY = 3000; // 3 seconds
+let identifyFailures = 0;
+const IDENTIFY_FAILURE_HINT_AFTER = 5; // loud config hint after this many failures
 const SERVER_CHECK_INTERVAL = 5000; // Check server every 5 seconds
 const SERVER_PROBE_TIMEOUT = 2000; // REST /v1/api/info probe timeout
 let loggedProcessUpRestDown = false;
@@ -699,7 +701,8 @@ function connectToTakaro() {
 
   takaroWs.on('open', () => {
     logger.info('Connected to Takaro WebSocket');
-    reconnectAttempts = 0;
+    // reconnectAttempts is reset on a *successful* identify, not merely on a
+    // TCP connect, so a repeatedly rejected identify still backs off properly.
     sendIdentify();
   });
 
@@ -783,11 +786,33 @@ function handleTakaroMessage(message: any) {
  */
 function handleIdentifyResponse(message: any) {
   if (message.payload?.error) {
+    identifyFailures++;
     logger.error(`Identification failed: ${JSON.stringify(message.payload.error, null, 2)}`);
     logger.error(`Full message: ${JSON.stringify(message, null, 2)}`);
+
+    if (identifyFailures >= IDENTIFY_FAILURE_HINT_AFTER) {
+      logger.error('*********************************************************************');
+      logger.error(`Takaro has now rejected identification ${identifyFailures} times in a row.`);
+      logger.error('Check REGISTRATION_TOKEN and SERVER_NAME in TakaroConfig.txt:');
+      logger.error('  - REGISTRATION_TOKEN must be the token Takaro shows when you add the server');
+      logger.error('  - SERVER_NAME must match the server identity in Takaro exactly');
+      logger.error('The bridge keeps retrying, but it cannot work until these are correct.');
+      logger.error('*********************************************************************');
+    }
+
+    // Do not idle on a dead socket: close it so the normal backoff reconnect
+    // (3 s -> 60 s cap) kicks in via the 'close' handler.
+    isConnectedToTakaro = false;
+    try {
+      takaroWs?.close();
+    } catch (error: any) {
+      logger.debug(`Failed to close socket after identify failure: ${error.message}`);
+    }
   } else {
     logger.info('Successfully identified with Takaro');
     isConnectedToTakaro = true;
+    identifyFailures = 0;
+    reconnectAttempts = 0;
   }
 }
 
