@@ -8,6 +8,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { EMBEDDED_MOD } from './embedded-mod';
 import { items as PALWORLD_ITEMS, itemCodes as PALWORLD_ITEM_CODES } from './embedded-items';
+import { resolvePlayerId, resolveTargetPlayerId, describeArgs } from './player-args';
 
 const execPromise = promisify(exec);
 
@@ -1422,12 +1423,17 @@ function handleListItems() {
 async function handleGiveItem(args: any) {
   try {
     const itemArgs = typeof args === 'string' ? JSON.parse(args) : args;
-    const playerId = itemArgs.gameId || itemArgs.playerId || itemArgs.userId;
+    // Takaro sends { player: { gameId }, item, amount, quality }
+    const playerId = resolvePlayerId(itemArgs);
     const itemId = itemArgs.itemId || itemArgs.item;
-    const quantity = itemArgs.quantity || itemArgs.amount || 1;
+    const quantity = Number(itemArgs.amount ?? itemArgs.quantity ?? 1) || 1;
+    // Palworld has no item quality/tier concept; accept and ignore Takaro's field.
+    if (itemArgs.quality !== undefined && itemArgs.quality !== null && String(itemArgs.quality) !== '' && String(itemArgs.quality) !== '0') {
+      logger.debug(`[ITEMS] Ignoring quality "${itemArgs.quality}" - Palworld items have no quality tiers`);
+    }
 
     if (!playerId) {
-      logger.error('[ITEMS] No player ID provided for giveItem');
+      logger.error(`[ITEMS] No player ID provided for giveItem (args: ${describeArgs(itemArgs)})`);
       return { success: false, error: 'No player ID provided' };
     }
 
@@ -1523,13 +1529,20 @@ async function handleGiveItem(args: any) {
  */
 async function handleTeleportPlayer(args: any) {
   const teleportArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  const sourcePlayer = teleportArgs.sourcePlayer || teleportArgs.playerId;
-  const targetPlayer = teleportArgs.targetPlayer || teleportArgs.destinationPlayer;
+  // Takaro sends { player: { ...IGamePlayer }, x, y, z, dimension }
+  const sourcePlayer = resolvePlayerId(teleportArgs);
+  const targetPlayer = resolveTargetPlayerId(teleportArgs);
   const x = teleportArgs.x;
   const y = teleportArgs.y;
   const z = teleportArgs.z;
+  // Palworld is single-world; Takaro's optional `dimension` has no meaning here.
+  if (teleportArgs.dimension !== undefined && teleportArgs.dimension !== null) {
+    logger.debug(`[TELEPORT] Ignoring dimension "${teleportArgs.dimension}" - Palworld has a single world`);
+  }
 
   if (!sourcePlayer) {
+    // A14: v1.7.6 failed this silently; always leave a trace with the shape we got.
+    logger.warn(`[TELEPORT] No source player in teleportPlayer args: ${describeArgs(teleportArgs)}`);
     return { success: false, error: 'sourcePlayer is required' };
   }
 
@@ -1537,6 +1550,7 @@ async function handleTeleportPlayer(args: any) {
   const isCoordinateTeleport = x !== undefined && y !== undefined && z !== undefined;
 
   if (!isCoordinateTeleport && !targetPlayer) {
+    logger.warn(`[TELEPORT] Neither target player nor x/y/z in args: ${describeArgs(teleportArgs)}`);
     return { success: false, error: 'Either targetPlayer or coordinates (x, y, z) are required' };
   }
 
@@ -1551,6 +1565,7 @@ async function handleTeleportPlayer(args: any) {
     );
 
     if (!source) {
+      logger.warn(`[TELEPORT] Source player "${sourcePlayer}" not found online (args: ${describeArgs(teleportArgs)})`);
       return { success: false, error: `Source player "${sourcePlayer}" not found online` };
     }
 
@@ -1575,11 +1590,12 @@ async function handleTeleportPlayer(args: any) {
 
     // Handle player-to-player teleport
     const target = players.find((p: any) =>
-      p.name.toLowerCase() === targetPlayer.toLowerCase() ||
+      p.name.toLowerCase() === targetPlayer!.toLowerCase() ||
       p.gameId === targetPlayer
     );
 
     if (!target) {
+      logger.warn(`[TELEPORT] Target player "${targetPlayer}" not found online (args: ${describeArgs(teleportArgs)})`);
       return { success: false, error: `Target player "${targetPlayer}" not found online` };
     }
 
@@ -1925,14 +1941,23 @@ async function handleExecuteCommand(args: any) {
  */
 async function handleKickPlayer(args: any) {
   const kickArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  const userId = kickArgs.gameId || kickArgs.userId;
+  // Takaro sends { player: { ...IGamePlayer }, reason }
+  const userId = resolvePlayerId(kickArgs);
+  const reason = typeof kickArgs?.reason === 'string' && kickArgs.reason.trim()
+    ? kickArgs.reason.trim()
+    : 'You have been kicked from the server';
+
+  if (!userId) {
+    logger.warn(`[KICK] No player ID provided for kickPlayer (args: ${describeArgs(kickArgs)})`);
+    return { success: false, error: 'No player ID provided' };
+  }
 
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
 
     const data = JSON.stringify({
       userid: userId,
-      message: 'You have been kicked from the server'
+      message: reason
     });
 
     const config = {
@@ -1960,14 +1985,29 @@ async function handleKickPlayer(args: any) {
  */
 async function handleBanPlayer(args: any) {
   const banArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  const userId = banArgs.gameId || banArgs.userId;
+  // Takaro sends BanDTO.toJSON() = { player: { ...IGamePlayer }, reason, expiresAt }
+  const userId = resolvePlayerId(banArgs);
+  const reason = typeof banArgs?.reason === 'string' && banArgs.reason.trim()
+    ? banArgs.reason.trim()
+    : 'You are banned.';
+
+  if (!userId) {
+    logger.warn(`[BAN] No player ID provided for banPlayer (args: ${describeArgs(banArgs)})`);
+    return { success: false, error: 'No player ID provided' };
+  }
+
+  // Palworld's REST /v1/api/ban takes only { userid, message } -- there is no expiry
+  // parameter, so a temporary ban from Takaro becomes a permanent in-game ban.
+  if (banArgs?.expiresAt) {
+    logger.warn(`[BAN] Palworld's REST API has no ban expiry; ${userId} is banned permanently in-game (expiresAt ${banArgs.expiresAt} is only tracked by Takaro)`);
+  }
 
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
 
     const data = JSON.stringify({
       userid: userId,
-      message: 'You are banned.'
+      message: reason
     });
 
     const config = {
@@ -1995,7 +2035,13 @@ async function handleBanPlayer(args: any) {
  */
 async function handleUnbanPlayer(args: any) {
   const unbanArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  const userId = unbanArgs.gameId || unbanArgs.userId;
+  // Takaro sends IGamePlayer.toJSON() (flat gameId); keep the nested shape working too.
+  const userId = resolvePlayerId(unbanArgs);
+
+  if (!userId) {
+    logger.warn(`[UNBAN] No player ID provided for unbanPlayer (args: ${describeArgs(unbanArgs)})`);
+    return { success: false, error: 'No player ID provided' };
+  }
 
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
