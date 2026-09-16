@@ -8,7 +8,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { EMBEDDED_MOD } from './embedded-mod';
 import { items as PALWORLD_ITEMS, itemCodes as PALWORLD_ITEM_CODES } from './embedded-items';
-import { resolvePlayerId, resolveTargetPlayerId, describeArgs, bareSteamId } from './player-args';
+import { resolvePlayerId, resolveTargetPlayerId, resolveUnbanGameId, describeArgs, bareSteamId } from './player-args';
 
 const execPromise = promisify(exec);
 
@@ -2158,8 +2158,10 @@ async function handleBanPlayer(args: any) {
  */
 async function handleUnbanPlayer(args: any) {
   const unbanArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  // Takaro sends IGamePlayer.toJSON() (flat gameId); keep the nested shape working too.
-  const requested = resolvePlayerId(unbanArgs);
+  // F20: unban's payload flattens the game id to the TOP LEVEL (gameId/steamId) with a
+  // `player` sub-object that only holds Takaro's own ids, so the generic resolver picked
+  // the Takaro playerId and the real steam id was never unbanned. Read the true game id.
+  const requested = resolveUnbanGameId(unbanArgs);
   // Allow unbanning by player name as well: the ledger remembers the name we banned.
   const record = requested ? findBanRecord(requested) : undefined;
   const userId = record ? record.gameId : requested;

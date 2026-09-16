@@ -45,6 +45,36 @@ export function resolvePlayerId(args: any): string | undefined {
   );
 }
 
+/**
+ * Resolve the Palworld game id (the `steam_7656…` account id) for an UNBAN.
+ *
+ * F20 (hardtest-7R-A7-A8-A9-A10.txt): Takaro's `unbanPlayer` does NOT arrive in the
+ * nested `{ player: { gameId } }` shape that kick/ban/give/teleport use. It arrives as
+ * the flattened POG payload with the game id at the TOP LEVEL plus a `player` sub-object
+ * that only carries Takaro's own ids:
+ *   { id:"<pog>", playerId:"<takaro playerId>", gameId:"steam_7656…", steamId:"7656…",
+ *     player:{ id:"<takaro playerId>", steamId:"steam_7656…" } }
+ * The generic resolvePlayerId() picks pickGameId(args.player) first, and because that
+ * sub-object has no gameId it falls through to `.id` = the Takaro playerId, so the bridge
+ * unbanned "d479004e…" (a no-op) while the real steam id stayed banned.
+ *
+ * So unban reads the game id the way F0 reads it for ban, but WITHOUT the misleading
+ * player.id fallback: player.gameId -> top-level gameId -> steamId -> player.steamId.
+ * A bare 17-digit steam id is normalised to the `steam_` form the Palworld ban list and
+ * REST /v1/api/unban expect (the console `unban` path already passes `steam_…`).
+ */
+export function resolveUnbanGameId(args: any): string | undefined {
+  if (!args || typeof args !== 'object') return pickGameId(args);
+  const raw =
+    (typeof args.player?.gameId === 'string' && args.player.gameId) ||
+    (typeof args.gameId === 'string' && args.gameId) ||
+    (typeof args.steamId === 'string' && args.steamId) ||
+    (typeof args.player?.steamId === 'string' && args.player.steamId) ||
+    undefined;
+  if (!raw) return undefined;
+  return /^\d{17}$/.test(raw) ? `steam_${raw}` : raw;
+}
+
 /** Resolve the destination player for a player-to-player teleport. */
 export function resolveTargetPlayerId(args: any): string | undefined {
   if (!args || typeof args !== 'object') return undefined;
