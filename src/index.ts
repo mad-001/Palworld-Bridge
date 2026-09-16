@@ -1005,8 +1005,10 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'shutdown':
-        // Takaro's Generic adapter calls shutdown() with no arguments.
-        responsePayload = await shutdownServer(10, 'Server shutting down (Takaro)');
+        // Takaro's Generic adapter calls shutdown() with no arguments and expects
+        // the server to actually go DOWN. F15: the graceful /v1/api/shutdown leaves
+        // the process alive (A15), so use the immediate /v1/api/stop instead.
+        responsePayload = await shutdownForTakaro('Server shutting down (Takaro)');
         break;
 
       case 'listBans':
@@ -2227,6 +2229,41 @@ async function shutdownServer(waittime: number, message: string) {
     logger.error(`Failed to shutdown server: ${error.message}`);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Takaro `shutdown` action: bring the server process DOWN.
+ *
+ * F15 (hardtest-7R-A15.txt): the graceful REST shutdown (/v1/api/shutdown with a
+ * waittime) disconnects players and UNLOADS the world but does NOT terminate the
+ * PalServer process - REST 8212 kept returning 200 and the PID stayed alive for
+ * 3.5+ min, so Takaro never saw the server go down. Palworld's REST exposes an
+ * immediate variant, /v1/api/stop ("Force stop the server immediately"), which is
+ * the one meant to end the process; route the Takaro action there instead. We
+ * announce first so players get a reason, then force-stop.
+ *
+ * If PalServer v1.0.5's /v1/api/stop ALSO only unloads without exiting the .exe,
+ * that is a server limitation (its REST offers no in-process way to make the
+ * process exit) and an external supervisor / power-cycle would be required - to
+ * be confirmed by the live retest.
+ */
+async function shutdownForTakaro(message: string) {
+  const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+  // Best-effort in-game notice; a failed announce must never block the stop.
+  try {
+    await axios({
+      method: 'post',
+      url: `${PALWORLD_BASE_URL}/v1/api/announce`,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${authString}` },
+      data: JSON.stringify({ message }),
+      timeout: 5000,
+    });
+  } catch (error: any) {
+    logger.debug(`Shutdown announce failed (non-fatal): ${error.message}`);
+  }
+  // /v1/api/stop is the immediate/force variant meant to end the process, unlike
+  // /v1/api/shutdown which A15 proved only unloads the world (F15).
+  return handleStopServer();
 }
 
 /**
