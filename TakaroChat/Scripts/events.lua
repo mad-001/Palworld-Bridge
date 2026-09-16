@@ -164,10 +164,40 @@ local function PlayerNameFromCharacter(character)
     return PlayerNameFromState(character.PlayerState)
 end
 
+-- Existence guard (F17). RegisterHook resolves its target by an exact UFunction
+-- object path and, on this Okaetsu Palworld 1.0 UE4SS build, NATIVE-CRASHES the
+-- whole server process when the path does not resolve (a C++ crash that Lua
+-- `pcall` cannot catch - see hardtest-6X-serverboot.txt). StaticFindObject is
+-- the UE4SS-documented, recommended way to retrieve non-instance objects such as
+-- UClass/UFunction; it returns the object (or nil / an invalid object) WITHOUT
+-- crashing when the path is absent. So we never call RegisterHook on a path that
+-- StaticFindObject cannot resolve: a missing path becomes a clean "not found
+-- yet, retry" instead of a boot crash. StaticFindObject is already used safely
+-- elsewhere in this mod (teleport.lua: StaticFindObject("/Script/Pal.Default__PalUtility")).
+-- RegisterHook accepts /Script/Module.Class:Function and StaticFindObject uses
+-- the same path (type prefix has no effect), so the same string gates both.
+local function UFunctionExists(path)
+    local ok, obj = pcall(function() return StaticFindObject(path) end)
+    if not ok or obj == nil then
+        return false
+    end
+    -- A non-nil StaticFindObject result already means the object is in memory
+    -- (RegisterHook is safe). When the build also exposes :IsValid(), require it
+    -- to be true; if :IsValid() is unavailable, non-nil is sufficient.
+    local okv, valid = pcall(function() return obj:IsValid() end)
+    if not okv then
+        return true
+    end
+    return valid == true
+end
+
 -- Try every not-yet-registered candidate of every pending hook once.
 -- mode "first": stop at the first candidate that registers.
 -- mode "all":   register every candidate that resolves (e.g. the male and
 --               female player Blueprints are separate classes).
+-- Each candidate is existence-guarded: RegisterHook is only ever called on a
+-- path StaticFindObject has already resolved, so a missing 1.0 path can never
+-- crash the server (F17).
 local function AttemptHookRound(trigger)
     local outstanding = 0
 
@@ -176,6 +206,14 @@ local function AttemptHookRound(trigger)
             entry.attempts = entry.attempts + 1
             for _, candidate in ipairs(entry.candidates) do
                 if not candidate.registered then
+                    if not UFunctionExists(candidate.path) then
+                        -- Not loaded / no such UFunction yet. Skip WITHOUT
+                        -- touching RegisterHook (which would crash), retry later.
+                        candidate.lastError = "UFunction not in memory (StaticFindObject nil)"
+                        logger:log(3, string.format(
+                            "[HOOKS] %s hook: %s not resolved yet (attempt %d) - skipping RegisterHook",
+                            label, candidate.path, entry.attempts))
+                    else
                     local ok, err = pcall(function()
                         RegisterHook(candidate.path, entry.handler)
                     end)
@@ -193,6 +231,7 @@ local function AttemptHookRound(trigger)
                         logger:log(3, string.format(
                             "[HOOKS] %s hook: %s not available (attempt %d): %s",
                             label, candidate.path, entry.attempts, candidate.lastError))
+                    end
                     end
                 end
             end
