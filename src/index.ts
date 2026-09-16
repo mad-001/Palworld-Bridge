@@ -8,6 +8,10 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { EMBEDDED_MOD } from './embedded-mod';
 import { items as PALWORLD_ITEMS, itemCodes as PALWORLD_ITEM_CODES } from './embedded-items';
+
+// Map internal item code (FName, e.g. "Wood") -> English display name from the
+// embedded catalog, for building Takaro IItemDTO rows (code + name required).
+const PALWORLD_ITEM_NAMES = new Map<string, string>(PALWORLD_ITEMS.map((i) => [i.code, i.name]));
 import { resolvePlayerId, resolveTargetPlayerId, resolveUnbanGameId, describeArgs, bareSteamId } from './player-args';
 
 const execPromise = promisify(exec);
@@ -411,6 +415,27 @@ interface ItemResponse {
 const itemRequestQueue: ItemRequest[] = [];
 const itemResponseQueue: ItemResponse[] = [];
 
+// Inventory reading system (F22) - on-demand request/response, mirrors the
+// location queue. The Lua enumerates the player's containers and posts back
+// { code, count } rows; the bridge maps code -> English name for the Takaro DTO.
+interface InventoryReadRequest {
+  name: string;      // Player display name (PlayerNamePrivate in Lua)
+  requestId: string;
+  timestamp: string;
+}
+interface InventoryReadItem {
+  code: string;
+  count: number;
+}
+interface InventoryReadResponse {
+  requestId: string;
+  name: string;
+  items: InventoryReadItem[];
+  timestamp: string;
+}
+const inventoryRequestQueue: InventoryReadRequest[] = [];
+const inventoryResponseQueue: InventoryReadResponse[] = [];
+
 // Map playerName to steamId for location request tracking
 const playerNameToSteamId = new Map<string, string>();
 
@@ -628,6 +653,30 @@ app.post('/item-response', (req, res) => {
     res.status(200).json({ success: true });
   } catch (error: any) {
     logger.error(`Item response endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Inventory request queue endpoint (polled by Lua)
+app.get('/inventory-queue', (req, res) => {
+  try {
+    const pending = [...inventoryRequestQueue];
+    res.status(200).json({ requests: pending });
+  } catch (error: any) {
+    logger.error(`Inventory queue endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Inventory response endpoint (Lua posts enumerated items here)
+app.post('/inventory-response', (req, res) => {
+  try {
+    const response: InventoryReadResponse = req.body;
+    inventoryResponseQueue.push(response);
+    logger.debug(`[INVENTORY] Received response for ${response.name}: ${(response.items || []).length} item stack(s)`);
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    logger.error(`Inventory response endpoint error: ${error.message}`);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -1486,7 +1535,13 @@ async function handleGetPlayerLocation(args: any) {
 }
 
 /**
- * Get player inventory from cache
+ * Get a player's inventory on demand (F22).
+ *
+ * Enqueues an inventory request for the UE4SS mod, which enumerates the player's
+ * item containers and posts back { code, count } rows. Each row is mapped to a
+ * Takaro IItemDTO: { code, name, quantity } - `name` from the embedded catalog,
+ * falling back to the code when unknown. Returns [] cleanly (never throws / never
+ * raw rows) when the player is offline, unresolvable, has no items, or times out.
  */
 async function handleGetPlayerInventory(args: any) {
   try {
@@ -1494,29 +1549,72 @@ async function handleGetPlayerInventory(args: any) {
     const playerId = inventoryArgs.gameId || inventoryArgs.playerId || inventoryArgs.userId;
 
     if (!playerId) {
-      logger.error('No player ID provided for getPlayerInventory');
+      logger.error('[INVENTORY] No player ID provided for getPlayerInventory');
       return [];
     }
 
-    // Try to find inventory by player ID or name
-    // Since we cache by name, we need to get the player's name first
+    // Resolve the online player (same lookup as giveItem/getPlayerLocation).
     const players = await handleGetPlayers();
     const player = players.find((p: any) => p.gameId === playerId || p.steamId === playerId || p.name === playerId);
 
     if (!player) {
-      logger.warn(`Player ${playerId} not found for inventory lookup`);
+      logger.warn(`[INVENTORY] Player ${playerId} not found for inventory lookup`);
       return [];
     }
 
-    const cachedInventory = playerInventories.get(player.name);
+    const playerName = player.accountName; // Matches PlayerNamePrivate in Lua
 
-    if (!cachedInventory) {
-      return [];
+    const requestId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    inventoryRequestQueue.push({
+      name: playerName,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`[INVENTORY] Queued request ${requestId} for ${player.name}`);
+
+    // Wait for the Lua to enumerate and respond (with timeout).
+    const timeout = 5000;
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+      const responseIndex = inventoryResponseQueue.findIndex(r => r.requestId === requestId);
+
+      if (responseIndex !== -1) {
+        const response = inventoryResponseQueue[responseIndex];
+        inventoryResponseQueue.splice(responseIndex, 1);
+
+        const queueIndex = inventoryRequestQueue.findIndex(r => r.requestId === requestId);
+        if (queueIndex !== -1) {
+          inventoryRequestQueue.splice(queueIndex, 1);
+        }
+
+        const rows = Array.isArray(response.items) ? response.items : [];
+        // Map to Takaro IItemDTO shape: code + name (+ quantity) are all required.
+        const dto = rows
+          .filter((it) => it && typeof it.code === 'string' && it.code !== '')
+          .map((it) => ({
+            code: it.code,
+            name: PALWORLD_ITEM_NAMES.get(it.code) || it.code,
+            quantity: Number(it.count) || 0
+          }));
+
+        logger.info(`[INVENTORY] Request ${requestId} -> ${dto.length} item stack(s) for ${player.name}`);
+        return dto;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    return cachedInventory.inventory;
+    // Timeout - clean up the pending request and return empty (not an error).
+    const queueIndex = inventoryRequestQueue.findIndex(r => r.requestId === requestId);
+    if (queueIndex !== -1) {
+      inventoryRequestQueue.splice(queueIndex, 1);
+    }
+    logger.warn(`[INVENTORY] Timeout waiting for inventory response for ${player.name}`);
+    return [];
   } catch (error: any) {
-    logger.error(`Failed to get player inventory: ${error.message}`);
+    logger.error(`[INVENTORY] Failed to get player inventory: ${error.message}`);
     return [];
   }
 }
