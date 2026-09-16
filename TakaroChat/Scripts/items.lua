@@ -75,6 +75,105 @@ local function ResolveItemFName(itemId)
     return name
 end
 
+-- Deliver an item into a player's inventory (F21).
+--
+-- hardtest-7R-A13.txt: on PalServer v1.0.5.102999 the queued give reported success
+-- but the item never landed, and a valid `Wood` threw
+--   "attempt to call a TrivialObject value method" at items.lua:120,
+-- i.e. inventoryData:RequestAddItem is unresolvable on a DEDICATED SERVER. That
+-- call is the CLIENT-side request path (it asks the owning client to add the item),
+-- so it is a no-op / trivial object when there is no client context - exactly the
+-- dedicated-server case.
+--
+-- The working Palworld 1.0 dedicated-server admin mod dkoz/AdminCommands uses the
+-- server-internal path instead (AdminCommands/Scripts/modules/items.lua):
+--     if isServerSide() then
+--         inventory:AddItem_ServerInternal(FName(item), quantity, false, 0.0, true)
+--     else
+--         inventory:RequestAddItem(FName(item), quantity, false)
+--     end
+-- Source: https://github.com/dkoz/AdminCommands (Scripts/modules/items.lua),
+-- the upstream of waze3174/AdminCommands-Palhaven cited in research/ue4ss-hooks-1.0.md.
+-- We mirror that: prefer AddItem_ServerInternal, fall back to RequestAddItem.
+--
+-- Every reflected call is existence-guarded the F17 way. RegisterHook could
+-- native-crash on a missing path; an instance method call raises a *Lua-catchable*
+-- error (A13 caught the TrivialObject error via pcall), so pcall is the real
+-- protection here, and a StaticFindObject pre-check on the method's UFunction (built
+-- from the inventory object's own class name) avoids even attempting a call the
+-- build does not expose. When the class path cannot be determined we still attempt
+-- under pcall, since that cannot crash the server.
+--
+-- Returns (delivered, err, method). `delivered` is true only when a reflected add
+-- call completed without error; whether the item is physically in the bag still
+-- needs the live retest to confirm (documented as unverified).
+
+-- Does <inventoryData>'s class expose UFunction <methodName>?
+--   "yes"     -> StaticFindObject resolved it, safe & sensible to call
+--   "no"      -> class known and StaticFindObject did NOT resolve it -> skip
+--   "unknown" -> class name could not be read -> caller may still try under pcall
+local function InventoryMethodStatus(inventoryData, methodName)
+    local okClass, className = pcall(function()
+        return inventoryData:GetClass():GetFName():ToString()
+    end)
+    if not okClass or not className or className == "" then
+        return "unknown"
+    end
+    -- Palworld's inventory-data classes live in the /Script/Pal package.
+    local path = string.format("/Script/Pal.%s:%s", className, methodName)
+    local okFind, obj = pcall(function() return StaticFindObject(path) end)
+    if not okFind or obj == nil then
+        return "no"
+    end
+    local okValid, valid = pcall(function() return obj:IsValid() end)
+    if not okValid then
+        return "yes" -- IsValid unavailable on this build; non-nil is enough
+    end
+    return valid == true and "yes" or "no"
+end
+
+-- Try one add-item UFunction. Returns (ok, err).
+--
+-- The StaticFindObject status is ADVISORY, not a gate: it is checked and logged,
+-- but a "no" does not skip the call. StaticFindObject resolves a UFunction only on
+-- the exact class in the path, while UE4SS instance calls walk the class hierarchy,
+-- so an inherited AddItem_ServerInternal (which dkoz/AdminCommands calls directly
+-- and which works) can be reported absent on the concrete subclass. Blocking on
+-- that would break delivery. The genuine crash-safety comes from pcall: an instance
+-- method call raises a Lua-catchable error (proven in A13), never a native crash, so
+-- attempting under pcall can never take the server down even on a wrong signature.
+local function TryInventoryAdd(inventoryData, methodName, callFn)
+    local status = InventoryMethodStatus(inventoryData, methodName)
+    logger:log(3, string.format("[ITEMS] %s existence check: %s", methodName, status))
+    local ran, callErr = pcall(callFn)
+    if ran then
+        return true, nil
+    end
+    return false, string.format("%s failed: %s", methodName, tostring(callErr))
+end
+
+local function DeliverItem(inventoryData, itemName, quantity)
+    -- 1) Server-side add (correct path on a dedicated server) - the 5-arg signature
+    --    from dkoz/AdminCommands: AddItem_ServerInternal(FName, count, false, 0.0, true).
+    local ok, serverErr = TryInventoryAdd(inventoryData, "AddItem_ServerInternal", function()
+        inventoryData:AddItem_ServerInternal(itemName, quantity, false, 0.0, true)
+    end)
+    if ok then
+        return true, nil, "AddItem_ServerInternal"
+    end
+
+    -- 2) Client-request fallback (works on a listen server / single player).
+    local ok2, err2 = TryInventoryAdd(inventoryData, "RequestAddItem", function()
+        inventoryData:RequestAddItem(itemName, quantity, false)
+    end)
+    if ok2 then
+        return true, nil, "RequestAddItem"
+    end
+
+    local reason = serverErr or err2 or "no usable add-item UFunction (tried AddItem_ServerInternal, RequestAddItem)"
+    return false, reason, nil
+end
+
 -- Give item to a player.
 -- Returns (ok, err). The previous version put its return statements inside the
 -- pcall closure, so their values were discarded and every call that did not
@@ -114,11 +213,20 @@ function GiveItemToPlayer(playerName, itemId, quantity)
                             return
                         end
 
-                        -- Add item using RequestAddItem (client-side request)
-                        -- For server-side, would use AddItem_ServerInternal but requires server context check
-                        inventoryData:RequestAddItem(itemName, quantity, false)
+                        -- F21: deliver via the server-internal path (RequestAddItem
+                        -- is a client request that no-ops / throws "TrivialObject" on a
+                        -- dedicated server - hardtest-7R-A13.txt). DeliverItem prefers
+                        -- AddItem_ServerInternal and reports the REAL result.
+                        local delivered, deliverErr, method = DeliverItem(inventoryData, itemName, quantity)
+                        if not delivered then
+                            logger:log(1, string.format("[ITEMS] Failed to deliver %d x %s to %s: %s",
+                                quantity, itemId, playerName, tostring(deliverErr)))
+                            err = deliverErr
+                            return
+                        end
 
-                        logger:log(2, string.format("[ITEMS] Gave %d x %s to %s", quantity, itemId, playerName))
+                        logger:log(2, string.format("[ITEMS] Gave %d x %s to %s (via %s)",
+                            quantity, itemId, playerName, tostring(method)))
                         ok = true
                         return
                     end
