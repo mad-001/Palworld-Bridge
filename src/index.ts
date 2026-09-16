@@ -1590,14 +1590,21 @@ async function handleGetPlayerInventory(args: any) {
         }
 
         const rows = Array.isArray(response.items) ? response.items : [];
-        // Map to Takaro IItemDTO shape: code + name (+ quantity) are all required.
+        // Map to Takaro IItemDTO shape. Takaro's IItemDTO carries the stack size in
+        // the `amount` field (see gettakaro/takaro GameServer.ts IItemDTO); sending
+        // only `quantity` made Takaro store 0. Send `amount` (and `quantity` as an
+        // alias for any consumer that reads it).
         const dto = rows
           .filter((it) => it && typeof it.code === 'string' && it.code !== '')
-          .map((it) => ({
-            code: it.code,
-            name: PALWORLD_ITEM_NAMES.get(it.code) || it.code,
-            quantity: Number(it.count) || 0
-          }));
+          .map((it) => {
+            const amount = Number(it.count) || 0;
+            return {
+              code: it.code,
+              name: PALWORLD_ITEM_NAMES.get(it.code) || it.code,
+              amount,
+              quantity: amount
+            };
+          });
 
         logger.info(`[INVENTORY] Request ${requestId} -> ${dto.length} item stack(s) for ${player.name}`);
         return dto;
