@@ -45,8 +45,8 @@ safeInit("Location", Location)
 local Items = require("items")
 safeInit("Items", Items)
 
--- Inventory tracking (Fixed - now uses PlayerState:GetInventoryData)
--- Enable in config.lua by setting config.EnableInventoryTracking = true
+-- Inventory reading (F22 - on-demand request/response, no periodic push)
+-- On-demand: bridge POSTs a request, Lua enumerates containers and replies once
 local Inventory = require("inventory")
 safeInit("Inventory", Inventory)
 
@@ -63,7 +63,7 @@ print("  Logging: " .. (config.EnableLogging and "Enabled" or "Disabled"))
 print("  Teleport: Enabled (coordinate + player-to-player)")
 print("  Location Lookup: Enabled (full X/Y/Z coordinates)")
 print("  Item Giving: Enabled (via bridge API)")
-print("  Inventory Tracking: " .. (config.EnableInventoryTracking and "Enabled" or "Disabled"))
+print("  Inventory Reading: " .. (config.EnableInventoryTracking and "Enabled" or "Disabled"))
 print("  Guild Tracking: Disabled (unable to retrieve)")
 print("==========================")
 print("")

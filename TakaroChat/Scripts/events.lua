@@ -69,8 +69,20 @@ local function GetOnlinePlayers()
 end
 
 -- Check for player changes (connect/disconnect)
+local hooksRetriedForPlayer = false
+
 local function CheckPlayerChanges()
     local currentPlayers = GetOnlinePlayers()
+
+    -- The player Blueprint classes only exist once somebody has spawned, so the
+    -- first time the poll sees a player, re-attempt any hook that could not be
+    -- registered at boot (F17).
+    if not hooksRetriedForPlayer and next(currentPlayers) ~= nil then
+        hooksRetriedForPlayer = true
+        if Events.RetryHooksNow then
+            Events.RetryHooksNow("first-player-seen")
+        end
+    end
 
     -- Check for new players (joined)
     for playerName, _ in pairs(currentPlayers) do
@@ -92,6 +104,227 @@ local function CheckPlayerChanges()
     knownPlayers = currentPlayers
 end
 
+-- ---------------------------------------------------------------------------
+-- Hook registration (F17)
+--
+-- UE4SS `RegisterHook` resolves the target by an exact UFunction object path
+-- and throws a hard Lua error when nothing is found ("no UFunction with the
+-- specified name was found"); the UFunction must already exist in memory at
+-- the moment of the call (UE4SS docs, RegisterHook: "Any UFunction that you
+-- attempt to register with RegisterHook must already exist in memory when you
+-- register it."). v1.7.6 wrapped each call in a bare pcall, discarded the
+-- error text and gave up after one attempt, which produced the observed
+--   [ERROR] Warning: Could not register player connect/disconnect/death hook
+-- at boot with no further detail and no recovery.
+--
+-- Two independent causes, both handled here:
+--   1. Wrong path. ReceiveBeginPlay/ReceiveEndPlay are AActor Blueprint events
+--      and are NOT reflected on /Script/Pal.PalPlayerState, and there is no
+--      /Script/Pal.PalPlayerCharacter:OnDeath on Palworld 1.0. Candidate lists
+--      below put the paths used by working Palworld 1.0 mods first and keep the
+--      old v1.7.6 paths as fallbacks.
+--   2. Not loaded yet. Blueprint player classes only exist once a player has
+--      spawned, so a boot-time registration can never succeed. Every candidate
+--      list is therefore retried on a timer and again on the first connect the
+--      polling loop sees.
+-- ---------------------------------------------------------------------------
+
+local HOOK_RETRY_INTERVAL = 10000 -- ms between registration rounds
+local HOOK_RETRY_ATTEMPTS = 30    -- 30 x 10 s = 5 minutes of retrying
+
+local pendingHooks = {}           -- label -> { candidates, handler, mode, attempts, registered }
+
+-- RegisterHook callbacks receive RemoteUnrealParam wrappers; a few UE4SS
+-- versions hand the context over as a plain UObject instead. Accept both.
+local function Deref(value)
+    if type(value) == "userdata" and value.get then
+        local ok, inner = pcall(function() return value:get() end)
+        if ok and inner then
+            return inner
+        end
+    end
+    return value
+end
+
+local function PlayerNameFromState(playerState)
+    if not (playerState and playerState:IsValid()) then
+        return nil
+    end
+    local ok, name = pcall(function() return playerState.PlayerNamePrivate:ToString() end)
+    if ok and name and name ~= "" then
+        return name
+    end
+    return nil
+end
+
+local function PlayerNameFromCharacter(character)
+    if not (character and character:IsValid()) then
+        return nil
+    end
+    return PlayerNameFromState(character.PlayerState)
+end
+
+-- Existence guard (F17). RegisterHook resolves its target by an exact UFunction
+-- object path and, on this Okaetsu Palworld 1.0 UE4SS build, NATIVE-CRASHES the
+-- whole server process when the path does not resolve (a C++ crash that Lua
+-- `pcall` cannot catch - see hardtest-6X-serverboot.txt). StaticFindObject is
+-- the UE4SS-documented, recommended way to retrieve non-instance objects such as
+-- UClass/UFunction; it returns the object (or nil / an invalid object) WITHOUT
+-- crashing when the path is absent. So we never call RegisterHook on a path that
+-- StaticFindObject cannot resolve: a missing path becomes a clean "not found
+-- yet, retry" instead of a boot crash. StaticFindObject is already used safely
+-- elsewhere in this mod (teleport.lua: StaticFindObject("/Script/Pal.Default__PalUtility")).
+-- RegisterHook accepts /Script/Module.Class:Function and StaticFindObject uses
+-- the same path (type prefix has no effect), so the same string gates both.
+local function UFunctionExists(path)
+    local ok, obj = pcall(function() return StaticFindObject(path) end)
+    if not ok or obj == nil then
+        return false
+    end
+    -- A non-nil StaticFindObject result already means the object is in memory
+    -- (RegisterHook is safe). When the build also exposes :IsValid(), require it
+    -- to be true; if :IsValid() is unavailable, non-nil is sufficient.
+    local okv, valid = pcall(function() return obj:IsValid() end)
+    if not okv then
+        return true
+    end
+    return valid == true
+end
+
+-- Try every not-yet-registered candidate of every pending hook once.
+-- mode "first": stop at the first candidate that registers.
+-- mode "all":   register every candidate that resolves (e.g. the male and
+--               female player Blueprints are separate classes).
+-- Each candidate is existence-guarded: RegisterHook is only ever called on a
+-- path StaticFindObject has already resolved, so a missing 1.0 path can never
+-- crash the server (F17).
+local function AttemptHookRound(trigger)
+    local outstanding = 0
+
+    for label, entry in pairs(pendingHooks) do
+        if not entry.registered then
+            entry.attempts = entry.attempts + 1
+            for _, candidate in ipairs(entry.candidates) do
+                if not candidate.registered then
+                    if not UFunctionExists(candidate.path) then
+                        -- Not loaded / no such UFunction yet. Skip WITHOUT
+                        -- touching RegisterHook (which would crash), retry later.
+                        candidate.lastError = "UFunction not in memory (StaticFindObject nil)"
+                        logger:log(3, string.format(
+                            "[HOOKS] %s hook: %s not resolved yet (attempt %d) - skipping RegisterHook",
+                            label, candidate.path, entry.attempts))
+                    else
+                    local ok, err = pcall(function()
+                        RegisterHook(candidate.path, entry.handler)
+                    end)
+                    if ok then
+                        candidate.registered = true
+                        logger:log(2, string.format(
+                            "[HOOKS] Registered %s hook on %s (attempt %d, trigger: %s)",
+                            label, candidate.path, entry.attempts, trigger))
+                        if entry.mode == "first" then
+                            entry.registered = true
+                            break
+                        end
+                    else
+                        candidate.lastError = tostring(err)
+                        logger:log(3, string.format(
+                            "[HOOKS] %s hook: %s not available (attempt %d): %s",
+                            label, candidate.path, entry.attempts, candidate.lastError))
+                    end
+                    end
+                end
+            end
+
+            if entry.mode == "all" then
+                for _, candidate in ipairs(entry.candidates) do
+                    if candidate.registered then
+                        entry.registered = true
+                    end
+                end
+                -- "all" is only finished once every candidate resolved.
+                for _, candidate in ipairs(entry.candidates) do
+                    if not candidate.registered then
+                        entry.registered = false
+                        break
+                    end
+                end
+            end
+
+            if not entry.registered then
+                outstanding = outstanding + 1
+                if entry.attempts >= HOOK_RETRY_ATTEMPTS and not entry.gaveUp then
+                    entry.gaveUp = true
+                    local details = {}
+                    for _, candidate in ipairs(entry.candidates) do
+                        table.insert(details, string.format("%s -> %s", candidate.path,
+                            candidate.registered and "OK" or (candidate.lastError or "not found")))
+                    end
+                    logger:log(1, string.format(
+                        "[HOOKS] Giving up on the %s hook after %d attempts: %s",
+                        label, entry.attempts, table.concat(details, " | ")))
+                end
+            end
+        end
+    end
+
+    return outstanding
+end
+
+local retryLoopRunning = false
+
+local function ScheduleHookRetries()
+    if retryLoopRunning then
+        return
+    end
+    retryLoopRunning = true
+    LoopAsync(HOOK_RETRY_INTERVAL, function()
+        local outstanding = 0
+        local ok, err = pcall(function()
+            outstanding = AttemptHookRound("timer")
+        end)
+        if not ok then
+            logger:log(1, "[HOOKS] Retry round failed: " .. tostring(err))
+            return false
+        end
+
+        -- Stop the loop once everything registered or every entry gave up.
+        local stillTrying = false
+        for _, entry in pairs(pendingHooks) do
+            if not entry.registered and not entry.gaveUp then
+                stillTrying = true
+            end
+        end
+        if not stillTrying then
+            retryLoopRunning = false
+            logger:log(2, string.format(
+                "[HOOKS] Retry loop paused (%d hook group(s) still unregistered)", outstanding))
+            return true -- stop looping
+        end
+        return false
+    end)
+end
+
+-- Called by the polling loop when it sees the first player of a session: the
+-- player Blueprint classes are guaranteed to be loaded at that point.
+function Events.RetryHooksNow(reason)
+    local ok, err = pcall(function()
+        -- Give every still-missing hook a fresh attempt budget: a class that was
+        -- absent at boot may well be loaded now.
+        for _, entry in pairs(pendingHooks) do
+            if not entry.registered then
+                entry.attempts = 0
+                entry.gaveUp = false
+            end
+        end
+        AttemptHookRound(reason or "player-present")
+        ScheduleHookRetries()
+    end)
+    if not ok then
+        logger:log(1, "[HOOKS] Triggered retry failed: " .. tostring(err))
+    end
+end
+
 -- Initialize player events
 function Events.Initialize()
     logger:log(2, "Initializing player event monitoring...")
@@ -109,89 +342,118 @@ function Events.Initialize()
         end)
     end)
 
-    -- Hook player state creation (player connect)
-    local connectHookSuccess = pcall(function()
-        RegisterHook("/Script/Pal.PalPlayerState:ReceiveBeginPlay", function(playerState)
-            local success, err = pcall(function()
-                if playerState and playerState:IsValid() then
-                    ExecuteWithDelay(1000, function()
-                        if playerState:IsValid() then
-                            local playerName = playerState.PlayerNamePrivate:ToString()
-                            if playerName and playerName ~= "" then
-                                SendEventToBridge("player_connect", playerName, "{}")
-                                logger:log(2, string.format("Player connected: %s", playerName))
-                            end
+    -- Player connect. /Script/Pal.PalPlayerCharacter:OnCompleteInitializeParameter
+    -- is the path used by working Palworld 1.0 server mods for on-join logic;
+    -- the v1.7.6 PalPlayerState:ReceiveBeginPlay path is kept as a fallback.
+    pendingHooks["connect"] = {
+        mode = "first",
+        attempts = 0,
+        candidates = {
+            { path = "/Script/Pal.PalPlayerCharacter:OnCompleteInitializeParameter" },
+            { path = "/Script/Pal.PalPlayerState:ReceiveBeginPlay" },
+        },
+        handler = function(context)
+            local ok, err = pcall(function()
+                local obj = Deref(context)
+                -- Either a PalPlayerCharacter or (fallback path) a PalPlayerState.
+                ExecuteWithDelay(1000, function()
+                    local inner = pcall(function()
+                        if not (obj and obj:IsValid()) then return end
+                        local playerName = PlayerNameFromCharacter(obj) or PlayerNameFromState(obj)
+                        if playerName then
+                            -- Keep the poll from emitting the same connect again.
+                            knownPlayers[playerName] = true
+                            SendEventToBridge("player_connect", playerName, "{}")
+                            logger:log(2, string.format("Player connected: %s", playerName))
                         end
                     end)
-                end
+                    if not inner then
+                        logger:log(1, "Error resolving connected player name")
+                    end
+                end)
             end)
-
-            if not success then
+            if not ok then
                 logger:log(1, "Error in connect hook: " .. tostring(err))
             end
-        end)
-    end)
+        end,
+    }
 
-    if connectHookSuccess then
-        logger:log(2, "Registered player connect hook")
-    else
-        logger:log(1, "Warning: Could not register player connect hook")
-    end
-
-    -- Hook player state destruction (player disconnect)
-    local disconnectHookSuccess = pcall(function()
-        RegisterHook("/Script/Pal.PalPlayerState:ReceiveEndPlay", function(playerState, reason)
-            local success, err = pcall(function()
-                if playerState and playerState:IsValid() then
-                    local playerName = playerState.PlayerNamePrivate:ToString()
-                    if playerName and playerName ~= "" then
-                        SendEventToBridge("player_disconnect", playerName, "{}")
-                        logger:log(2, string.format("Player disconnected: %s", playerName))
-                    end
+    -- Player disconnect. ReceiveEndPlay is a Blueprint event, so it exists on the
+    -- concrete BP_Player_* classes, not on /Script/Pal.PalPlayerState. Both the
+    -- male and female player Blueprints must be hooked, and they only load once
+    -- a player has spawned - hence mode "all" plus the retry loop.
+    pendingHooks["disconnect"] = {
+        mode = "all",
+        attempts = 0,
+        candidates = {
+            { path = "/Game/Pal/Blueprint/Character/Player/Male/BP_Player_Male.BP_Player_Male_C:ReceiveEndPlay" },
+            { path = "/Game/Pal/Blueprint/Character/Player/Female/BP_Player_Female.BP_Player_Female_C:ReceiveEndPlay" },
+        },
+        handler = function(context)
+            local ok, err = pcall(function()
+                local obj = Deref(context)
+                local playerName = PlayerNameFromCharacter(obj) or PlayerNameFromState(obj)
+                if playerName then
+                    knownPlayers[playerName] = nil
+                    SendEventToBridge("player_disconnect", playerName, "{}")
+                    logger:log(2, string.format("Player disconnected: %s", playerName))
                 end
             end)
-
-            if not success then
+            if not ok then
                 logger:log(1, "Error in disconnect hook: " .. tostring(err))
             end
-        end)
-    end)
+        end,
+    }
 
-    if disconnectHookSuccess then
-        logger:log(2, "Registered player disconnect hook")
-    else
-        logger:log(1, "Warning: Could not register player disconnect hook")
-    end
+    -- Player death. /Script/Pal.PalCharacter:OnDeadCharacter is the 1.0 death
+    -- event; it fires for Pals too, so the handler only reports actors that
+    -- carry a valid PlayerState. The v1.7.6 PalPlayerCharacter:OnDeath path is
+    -- kept as a fallback.
+    pendingHooks["death"] = {
+        mode = "first",
+        attempts = 0,
+        candidates = {
+            { path = "/Script/Pal.PalCharacter:OnDeadCharacter" },
+            { path = "/Script/Pal.PalPlayerCharacter:OnDeath" },
+        },
+        handler = function(context, eventParam)
+            local ok, err = pcall(function()
+                local victim = nil
 
-    -- Hook player death
-    local deathHookSuccess = pcall(function()
-        RegisterHook("/Script/Pal.PalPlayerCharacter:OnDeath", function(character)
-            local success, err = pcall(function()
-                if character and character:IsValid() then
-                    local playerState = character.PlayerState
-                    if playerState and playerState:IsValid() then
-                        local playerName = playerState.PlayerNamePrivate:ToString()
-                        if playerName and playerName ~= "" then
-                            SendEventToBridge("player_death", playerName, "{}")
-                            logger:log(2, string.format("Player died: %s", playerName))
-                        end
+                -- OnDeadCharacter passes an FPalDeadInfo-like struct whose
+                -- SelfActor is the dead character.
+                if eventParam ~= nil then
+                    local deadInfo = Deref(eventParam)
+                    if deadInfo and deadInfo.SelfActor then
+                        victim = deadInfo.SelfActor
                     end
                 end
-            end)
 
-            if not success then
+                -- Fallback path (PalPlayerCharacter:OnDeath): the context is the
+                -- character itself.
+                if not victim then
+                    victim = Deref(context)
+                end
+
+                local playerName = PlayerNameFromCharacter(victim)
+                if playerName then
+                    SendEventToBridge("player_death", playerName, "{}")
+                    logger:log(2, string.format("Player died: %s", playerName))
+                else
+                    logger:log(3, "[HOOKS] Death event without a PlayerState (Pal or NPC), ignored")
+                end
+            end)
+            if not ok then
                 logger:log(1, "Error in death hook: " .. tostring(err))
             end
-        end)
-    end)
+        end,
+    }
 
-    if deathHookSuccess then
-        logger:log(2, "Registered death hook")
-    else
-        logger:log(1, "Warning: Could not register player death hook")
-    end
+    -- First attempt immediately, then keep retrying in the background.
+    AttemptHookRound("boot")
+    ScheduleHookRetries()
 
-    logger:log(2, "Player event hooks registration complete")
+    logger:log(2, "Player event hook registration started (retrying in the background)")
 end
 
 return Events

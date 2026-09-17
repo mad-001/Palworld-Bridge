@@ -11,9 +11,12 @@
 - **Console Commands** - Run commands directly from Takaro's web console
 - **Real-time Player Tracking** - Monitor player locations and activity
 - **WebSocket Connection** - Instant server events and status updates
-- **Player Management** - Ban, kick, and manage players by name
+- **Player Management** - Ban, kick, and manage players by name or Steam ID, with a
+  local ban ledger so Takaro's ban list is populated
 - **Server Control** - Save, shutdown, stop, and announce commands
 - **Chat Integration** - In-game chat forwarding to Takaro/Discord (UE4SS mod)
+- **Item Catalog** - 1891 Palworld items exposed to Takaro, so the shop item
+  picker and `giveItem` work (see [Item catalog](#-item-catalog))
 
 ## 📥 Installation
 
@@ -182,7 +185,64 @@ Use these commands in the Takaro web console:
 | `stop` | Stop server immediately |
 | `ban <player_name>` | Ban a player by name |
 | `kick <player_name>` | Kick a player by name |
-| `unban <steam_id>` | Unban a player by Steam ID |
+| `unban <steam_id\|player_name>` | Unban a player by Steam ID or by name |
+| `teleportplayer <source> <target>` | Teleport a player to another player |
+| `teleportplayer <source> <x> <y> <z>` | Teleport a player to coordinates |
+| `location <player>` | Show a player's current coordinates |
+
+## 🎮 Takaro actions
+
+Everything Takaro's Generic game server can ask for, and what the bridge does with it:
+
+| Action | Supported | Notes |
+|---|---|---|
+| `testReachability` | yes | Uses the Palworld REST API, so it also works off-box |
+| `getPlayers` | yes | Fails loudly on a REST error instead of reporting an empty server |
+| `getPlayer` | yes | Single player lookup by `gameId`; `null` when not online |
+| `getPlayerLocation` | yes | Needs the `TakaroChat` UE4SS mod; `null` (not `0,0,0`) on failure |
+| `getPlayerInventory` | yes | Needs the UE4SS mod and `EnableInventoryTracking` |
+| `sendMessage` | yes | Mapped to the REST `announce` endpoint |
+| `executeConsoleCommand` | yes | See the console command table above |
+| `giveItem` | yes | Needs the UE4SS mod; Palworld has no item quality tiers |
+| `teleportPlayer` | yes | Needs the UE4SS mod; coordinates or another player |
+| `kickPlayer` / `banPlayer` / `unbanPlayer` | yes | Takaro's reason is used as the in-game message |
+| `listBans` | yes | Bans the bridge issued (see below) |
+| `listItems` | yes | 1891 item catalog |
+| `shutdown` | yes | REST `/v1/api/shutdown` with a 10 second countdown |
+| `listEntities` / `listLocations` / `getMapInfo` | no | Palworld exposes no such data |
+
+Notes on identity and bans:
+
+- Palworld reports accounts as `steam_7656...`. The bridge keeps that raw form as the
+  player's `gameId` (stable identity) but reports `steamId` as the bare 17-digit Steam64
+  id, which is what Takaro's Steam profile enrichment needs.
+- Palworld's REST API can ban and unban but offers no way to read the ban list, so the
+  bridge keeps its own ledger in `bans.json` beside the bridge and serves that to
+  `listBans`. Bans made outside the bridge are not listed. Palworld's ban endpoint has no
+  expiry parameter either, so a temporary ban from Takaro is permanent in-game and only
+  Takaro tracks when it should end.
+
+## 🎒 Item catalog
+
+The Palworld REST API has no item endpoint, so the bridge ships its own catalog
+and answers Takaro's `listItems` from it. Takaro therefore sees **1891 items**
+(`code` = the in-game `DT_ItemDataTable` row name, plus an English `name` and
+`description`), which is what the shop item picker and item-giving modules need.
+
+- Source of truth: `data/palworld-items.json`, embedded into the bundled JS (and
+  therefore into `PalworldBridge.exe`) at build time by
+  `scripts/generate-embedded-items.js`, which runs from `npm run build`.
+- **Item ids change with Palworld game patches.** Regenerate
+  `data/palworld-items.json` after a Palworld update and rebuild. The list is
+  derived from `DT_ItemDataTable` (rows flagged `bLegalInGame`) cross-checked
+  against paldb.cc display names and the wiki's item descriptions; the full
+  method is documented in `palworld-items.SOURCES.md` alongside the data set.
+- `giveItem` validates the requested code against this catalog before touching
+  the in-game mod, and returns `Unknown item code: <code>` for anything not in
+  it. This matters because the UE4SS mod cannot validate ids at runtime: an
+  unknown `FName` makes `RequestAddItem` silently do nothing. The mod now
+  reports the *real* outcome back to the bridge (player offline, no inventory
+  data, etc.) instead of always claiming success.
 
 ## 🔌 Supported API Endpoints
 
@@ -215,7 +275,19 @@ PALWORLD_HOST=127.0.0.1
 PALWORLD_PORT=8212
 PALWORLD_USERNAME=admin
 PALWORLD_PASSWORD=your-admin-password
+
+# Optional: verbose troubleshooting logs (default 0)
+TAKARO_DEBUG=0
 ```
+
+`TAKARO_DEBUG=1` sets the log level to debug and writes every WebSocket frame
+exchanged with Takaro to the log file as `WS SEND ...` / `WS RECV ...` (frames
+are truncated at 2000 characters and your registration token is redacted). It
+is noisy - turn it back to `0` once you have what you need.
+
+The bridge decides whether your Palworld server is up by polling its REST API
+(`GET /v1/api/info`) every 5 seconds, so it also works when the bridge runs on
+Linux or in a container; the Windows process check is only an extra hint.
 
 ### Getting Takaro Tokens
 

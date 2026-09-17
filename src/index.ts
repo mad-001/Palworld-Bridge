@@ -7,6 +7,12 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { EMBEDDED_MOD } from './embedded-mod';
+import { items as PALWORLD_ITEMS, itemCodes as PALWORLD_ITEM_CODES } from './embedded-items';
+
+// Map internal item code (FName, e.g. "Wood") -> English display name from the
+// embedded catalog, for building Takaro IItemDTO rows (code + name required).
+const PALWORLD_ITEM_NAMES = new Map<string, string>(PALWORLD_ITEMS.map((i) => [i.code, i.name]));
+import { resolvePlayerId, resolveTargetPlayerId, resolveUnbanGameId, describeArgs, bareSteamId } from './player-args';
 
 const execPromise = promisify(exec);
 
@@ -57,6 +63,11 @@ REGISTRATION_TOKEN=Paste your registration token here
 
 # HTTP port for the in-game chat mod (leave as 3001).
 HTTP_PORT=3001
+
+# Set to 1 for verbose troubleshooting logs: every WebSocket frame exchanged
+# with Takaro is written to the log file (your registration token is redacted).
+# Leave at 0 for normal use - debug logging is noisy.
+TAKARO_DEBUG=0
 
 # Palworld REST API settings (auto-filled from PalWorldSettings.ini).
 PALWORLD_HOST=127.0.0.1
@@ -135,8 +146,12 @@ function writeStopFile(): void {
   } catch { /* non-fatal */ }
 }
 
+const setupLines: string[] = [];
 function autoSetup(): void {
-  const log = (m: string) => console.log(`[setup] ${m}`);
+  const log = (m: string) => {
+    console.log(`[setup] ${m}`);
+    setupLines.push(m);
+  };
   writeStopFile();
   const gameRoot = findGameRoot();
   if (!gameRoot) {
@@ -175,7 +190,10 @@ function autoSetup(): void {
 
 // Load configuration from TakaroConfig.txt
 function loadConfig() {
-  try { autoSetup(); } catch (e: any) { console.error(`[setup] skipped: ${e.message}`); }
+  try { autoSetup(); } catch (e: any) {
+    console.error(`[setup] skipped: ${e.message}`);
+    setupLines.push(`skipped: ${e.message}`);
+  }
 
   if (!fs.existsSync(CONFIG_PATH)) {
     console.error('ERROR: TakaroConfig.txt not found!');
@@ -224,9 +242,15 @@ function getLogFilename(): string {
 let currentLogFilename = getLogFilename();
 let fileTransport = new winston.transports.File({ filename: currentLogFilename });
 
+// TAKARO_DEBUG=1 (TakaroConfig.txt or environment) turns on verbose logging:
+// winston drops to `debug` level and every Takaro WebSocket frame is logged.
+const TAKARO_DEBUG = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.TAKARO_DEBUG || '').trim().toLowerCase()
+);
+
 // Configure logger
 const logger = winston.createLogger({
-  level: 'info',
+  level: TAKARO_DEBUG ? 'debug' : 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.printf(({ timestamp, level, message }) => {
@@ -238,6 +262,14 @@ const logger = winston.createLogger({
     fileTransport
   ]
 });
+
+// The [setup] lines are printed to the console before the logger exists (they
+// run from loadConfig()). Mirror them into winston so they land in the log file
+// too - previously they were console-only and invisible in bug reports.
+for (const line of setupLines) {
+  logger.info(`[setup] ${line}`);
+}
+setupLines.length = 0;
 
 // Function to clean up old log files (keep only 10 most recent)
 function cleanupOldLogs() {
@@ -314,7 +346,11 @@ let serverCheckInterval: NodeJS.Timeout | null = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 60000; // 60 seconds
 const BASE_RECONNECT_DELAY = 3000; // 3 seconds
+let identifyFailures = 0;
+const IDENTIFY_FAILURE_HINT_AFTER = 5; // loud config hint after this many failures
 const SERVER_CHECK_INTERVAL = 5000; // Check server every 5 seconds
+const SERVER_PROBE_TIMEOUT = 2000; // REST /v1/api/info probe timeout
+let loggedProcessUpRestDown = false;
 
 // Player inventory cache
 interface PlayerInventory {
@@ -373,13 +409,94 @@ interface ItemResponse {
   itemId: string;
   quantity: number;
   success: boolean;
+  error?: string;
   timestamp: string;
 }
 const itemRequestQueue: ItemRequest[] = [];
 const itemResponseQueue: ItemResponse[] = [];
 
+// Inventory reading system (F22) - on-demand request/response, mirrors the
+// location queue. The Lua enumerates the player's containers and posts back
+// { code, count } rows; the bridge maps code -> English name for the Takaro DTO.
+interface InventoryReadRequest {
+  name: string;      // Player display name (PlayerNamePrivate in Lua)
+  requestId: string;
+  timestamp: string;
+}
+interface InventoryReadItem {
+  code: string;
+  count: number;
+}
+interface InventoryReadResponse {
+  requestId: string;
+  name: string;
+  items: InventoryReadItem[];
+  timestamp: string;
+}
+const inventoryRequestQueue: InventoryReadRequest[] = [];
+const inventoryResponseQueue: InventoryReadResponse[] = [];
+
 // Map playerName to steamId for location request tracking
 const playerNameToSteamId = new Map<string, string>();
+
+/**
+ * Local ban ledger.
+ *
+ * Palworld's REST API can ban and unban (POST /v1/api/ban, /v1/api/unban) but exposes no way
+ * to READ the ban list, and the server only persists it in Pal/Saved/SaveGames/.../banlist.txt
+ * in an undocumented format. So the bridge keeps its own ledger of the bans it issued and
+ * serves that to Takaro's `listBans`. Bans made outside the bridge are not visible.
+ */
+interface BanRecord {
+  gameId: string;
+  name: string;
+  reason: string;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+const BANS_PATH = path.join(APP_DIR, 'bans.json');
+const banLedger = new Map<string, BanRecord>();
+
+function loadBanLedger(): void {
+  try {
+    if (!fs.existsSync(BANS_PATH)) return;
+    const parsed = JSON.parse(fs.readFileSync(BANS_PATH, 'utf-8'));
+    if (!Array.isArray(parsed)) return;
+    for (const entry of parsed) {
+      if (entry && typeof entry.gameId === 'string') {
+        banLedger.set(entry.gameId, {
+          gameId: entry.gameId,
+          name: typeof entry.name === 'string' && entry.name ? entry.name : entry.gameId,
+          reason: typeof entry.reason === 'string' ? entry.reason : 'Banned',
+          createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString(),
+          expiresAt: typeof entry.expiresAt === 'string' ? entry.expiresAt : null
+        });
+      }
+    }
+  } catch (error: any) {
+    // A corrupt ledger must never stop the bridge from starting.
+  }
+}
+
+function saveBanLedger(): void {
+  try {
+    fs.writeFileSync(BANS_PATH, JSON.stringify([...banLedger.values()], null, 2));
+  } catch (error: any) {
+    logger.error(`[BAN] Failed to persist ${BANS_PATH}: ${error.message}`);
+  }
+}
+
+/** Resolve a ban-ledger entry by gameId or by (case-insensitive) player name. */
+function findBanRecord(idOrName: string): BanRecord | undefined {
+  const direct = banLedger.get(idOrName);
+  if (direct) return direct;
+  const lower = idOrName.toLowerCase();
+  for (const record of banLedger.values()) {
+    if (record.name.toLowerCase() === lower) return record;
+  }
+  return undefined;
+}
 
 // Metrics
 const metrics = {
@@ -532,10 +649,34 @@ app.post('/item-response', (req, res) => {
   try {
     const response: ItemResponse = req.body;
     itemResponseQueue.push(response);
-    logger.info(`[ITEMS] ${response.success ? 'Gave' : 'Failed to give'} ${response.quantity}x ${response.itemId} to ${response.playerName}`);
+    logger.info(`[ITEMS] ${response.success ? 'Gave' : 'Failed to give'} ${response.quantity}x ${response.itemId} to ${response.playerName}${response.success ? '' : ` (${response.error || 'no reason given'})`}`);
     res.status(200).json({ success: true });
   } catch (error: any) {
     logger.error(`Item response endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Inventory request queue endpoint (polled by Lua)
+app.get('/inventory-queue', (req, res) => {
+  try {
+    const pending = [...inventoryRequestQueue];
+    res.status(200).json({ requests: pending });
+  } catch (error: any) {
+    logger.error(`Inventory queue endpoint error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Inventory response endpoint (Lua posts enumerated items here)
+app.post('/inventory-response', (req, res) => {
+  try {
+    const response: InventoryReadResponse = req.body;
+    inventoryResponseQueue.push(response);
+    logger.debug(`[INVENTORY] Received response for ${response.name}: ${(response.items || []).length} item stack(s)`);
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    logger.error(`Inventory response endpoint error: ${error.message}`);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -686,6 +827,25 @@ function initPalworldApi() {
 /**
  * Connect to Takaro WebSocket server
  */
+const WS_FRAME_MAX_CHARS = 2000;
+
+/**
+ * Log one raw Takaro WebSocket frame when TAKARO_DEBUG is on.
+ * The registration token is redacted and long frames are truncated so the log
+ * stays readable and never leaks a secret.
+ */
+function logWsFrame(direction: 'SEND' | 'RECV', raw: string) {
+  if (!TAKARO_DEBUG) return;
+  let safe = raw.replace(/("registrationToken"\s*:\s*)"[^"]*"/g, '$1"<redacted>"');
+  if (REGISTRATION_TOKEN) {
+    safe = safe.split(REGISTRATION_TOKEN).join('<redacted>');
+  }
+  if (safe.length > WS_FRAME_MAX_CHARS) {
+    safe = `${safe.slice(0, WS_FRAME_MAX_CHARS)}... [truncated, ${safe.length} chars]`;
+  }
+  logger.debug(`WS ${direction} ${safe}`);
+}
+
 function connectToTakaro() {
   if (takaroWs && takaroWs.readyState === WebSocket.OPEN) {
     logger.info('Already connected to Takaro');
@@ -697,12 +857,14 @@ function connectToTakaro() {
 
   takaroWs.on('open', () => {
     logger.info('Connected to Takaro WebSocket');
-    reconnectAttempts = 0;
+    // reconnectAttempts is reset on a *successful* identify, not merely on a
+    // TCP connect, so a repeatedly rejected identify still backs off properly.
     sendIdentify();
   });
 
   takaroWs.on('message', (data: WebSocket.Data) => {
     try {
+      logWsFrame('RECV', data.toString());
       const message = JSON.parse(data.toString());
       handleTakaroMessage(message);
     } catch (error) {
@@ -743,7 +905,9 @@ function sendIdentify() {
   }
 
   logger.info('Sending identify message to Takaro');
-  takaroWs.send(JSON.stringify(identifyMessage));
+  const rawIdentify = JSON.stringify(identifyMessage);
+  logWsFrame('SEND', rawIdentify);
+  takaroWs.send(rawIdentify);
 }
 
 /**
@@ -781,11 +945,33 @@ function handleTakaroMessage(message: any) {
  */
 function handleIdentifyResponse(message: any) {
   if (message.payload?.error) {
+    identifyFailures++;
     logger.error(`Identification failed: ${JSON.stringify(message.payload.error, null, 2)}`);
     logger.error(`Full message: ${JSON.stringify(message, null, 2)}`);
+
+    if (identifyFailures >= IDENTIFY_FAILURE_HINT_AFTER) {
+      logger.error('*********************************************************************');
+      logger.error(`Takaro has now rejected identification ${identifyFailures} times in a row.`);
+      logger.error('Check REGISTRATION_TOKEN and SERVER_NAME in TakaroConfig.txt:');
+      logger.error('  - REGISTRATION_TOKEN must be the token Takaro shows when you add the server');
+      logger.error('  - SERVER_NAME must match the server identity in Takaro exactly');
+      logger.error('The bridge keeps retrying, but it cannot work until these are correct.');
+      logger.error('*********************************************************************');
+    }
+
+    // Do not idle on a dead socket: close it so the normal backoff reconnect
+    // (3 s -> 60 s cap) kicks in via the 'close' handler.
+    isConnectedToTakaro = false;
+    try {
+      takaroWs?.close();
+    } catch (error: any) {
+      logger.debug(`Failed to close socket after identify failure: ${error.message}`);
+    }
   } else {
     logger.info('Successfully identified with Takaro');
     isConnectedToTakaro = true;
+    identifyFailures = 0;
+    reconnectAttempts = 0;
   }
 }
 
@@ -812,7 +998,11 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'getPlayers':
-        responsePayload = await handleGetPlayers();
+        responsePayload = await handleGetPlayers(false, true);
+        break;
+
+      case 'getPlayer':
+        responsePayload = await handleGetPlayer(args);
         break;
 
       case 'getServerInfo':
@@ -863,8 +1053,15 @@ async function handleTakaroRequest(message: any) {
         responsePayload = await handleStopServer();
         break;
 
+      case 'shutdown':
+        // Takaro's Generic adapter calls shutdown() with no arguments and expects
+        // the server to actually go DOWN. F15: the graceful /v1/api/shutdown leaves
+        // the process alive (A15), so use the immediate /v1/api/stop instead.
+        responsePayload = await shutdownForTakaro('Server shutting down (Takaro)');
+        break;
+
       case 'listBans':
-        responsePayload = [];
+        responsePayload = handleListBans();
         break;
 
       case 'getPlayerLocation':
@@ -884,8 +1081,7 @@ async function handleTakaroRequest(message: any) {
         break;
 
       case 'listItems':
-        // Palworld API doesn't provide item list, return empty array
-        responsePayload = [];
+        responsePayload = handleListItems();
         break;
 
       case 'listEntities':
@@ -934,24 +1130,75 @@ function clearBridgeState() {
   logger.info('[STATE RESET] Bridge state cleared successfully');
 }
 
-async function checkServerStatus() {
+/**
+ * Probe the Palworld REST API to decide whether the server is up.
+ *
+ * The original implementation shelled out to Windows `tasklist` every 5 s, which
+ * on any non-Windows host fails forever ("tasklist: not found"), pinning
+ * testReachability to false even while the REST API answers 200. Reproduced on
+ * Linux 2026-09-15: 12 errors/min and `connectable:false` while
+ * GET /v1/api/info returned 200.
+ */
+async function probeRestApi(): Promise<boolean> {
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+    const response = await axios({
+      method: 'get',
+      url: `${PALWORLD_BASE_URL}/v1/api/info`,
+      timeout: SERVER_PROBE_TIMEOUT,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Basic ${authString}`
+      },
+      validateStatus: () => true
+    });
+    if (response.status === 200) return true;
+    logger.debug(`Palworld REST probe returned HTTP ${response.status}`);
+    return false;
+  } catch (error: any) {
+    logger.debug(`Palworld REST probe failed: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Supplementary Windows-only check: is the server process alive even though the
+ * REST API is not answering yet? Used purely to log a clearer one-shot hint.
+ */
+async function isServerProcessAlive(): Promise<boolean> {
+  if (process.platform !== 'win32') return false;
   try {
     const { stdout } = await execPromise('tasklist /FI "IMAGENAME eq PalServer-Win64-Shipping-Cmd.exe" /NH');
-    const wasRunning = isServerRunning;
     // tasklist truncates long names, so check for the truncated version
-    isServerRunning = stdout.includes('PalServer-Win64-Shipping');
-
-    if (isServerRunning !== wasRunning) {
-      logger.info(`Palworld server status changed: ${isServerRunning ? 'ONLINE' : 'OFFLINE'}`);
-
-      // If server just came back online after being offline, clear stale state
-      if (isServerRunning && !wasRunning) {
-        clearBridgeState();
-      }
-    }
+    return stdout.includes('PalServer-Win64-Shipping');
   } catch (error: any) {
-    logger.error(`Failed to check Palworld server process: ${error.message}`);
-    isServerRunning = false;
+    logger.debug(`tasklist check failed: ${error.message}`);
+    return false;
+  }
+}
+
+async function checkServerStatus() {
+  const wasRunning = isServerRunning;
+  const restUp = await probeRestApi();
+
+  if (!restUp && await isServerProcessAlive()) {
+    if (!loggedProcessUpRestDown) {
+      loggedProcessUpRestDown = true;
+      logger.info('Palworld process is up, REST API not ready (waiting for the REST API to answer)');
+    }
+  } else if (restUp) {
+    loggedProcessUpRestDown = false;
+  }
+
+  isServerRunning = restUp;
+
+  if (isServerRunning !== wasRunning) {
+    logger.info(`Palworld server status changed: ${isServerRunning ? 'ONLINE' : 'OFFLINE'}`);
+
+    // If server just came back online after being offline, clear stale state
+    if (isServerRunning && !wasRunning) {
+      clearBridgeState();
+    }
   }
 }
 
@@ -973,7 +1220,7 @@ function startServerMonitoring() {
 /**
  * Get current players from Palworld server
  */
-async function handleGetPlayers(detectChanges: boolean = false) {
+async function handleGetPlayers(detectChanges: boolean = false, throwOnError: boolean = false) {
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
 
@@ -995,7 +1242,9 @@ async function handleGetPlayers(detectChanges: boolean = false) {
       name: String(player.name), // Character name (for Takaro)
       accountName: String(player.accountName || player.name), // Steam account name (for Lua - what PlayerNamePrivate returns)
       platformId: `palworld:${player.userId}`,
-      steamId: String(player.userId),
+      // gameId stays the raw Palworld userId (stable identity); Takaro's Steam enrichment
+      // needs the bare 17-digit Steam64 id, not Palworld's "steam_" prefixed form.
+      steamId: bareSteamId(String(player.userId)),
       palworldPlayerId: String(player.playerId || ''), // GUID from Palworld API - matches PlayerState.PlayerId in UE4SS
       ip: player.ip || undefined,
       ping: player.ping !== undefined ? player.ping : undefined,
@@ -1045,8 +1294,57 @@ async function handleGetPlayers(detectChanges: boolean = false) {
     return mappedPlayers;
   } catch (error: any) {
     logger.error(`Failed to get players: ${error.message}`);
+    if (throwOnError) {
+      // Takaro's Generic adapter turns an { error } response into a BadRequestError, which
+      // is what we want: an empty array would tell Takaro every player just went offline
+      // (firing player-disconnected + ending sessions) because of a momentary REST hiccup.
+      throw new Error(`Failed to list players: ${error.message}`);
+    }
     return [];
   }
+}
+
+/**
+ * Bans the bridge issued, in Takaro's BanDTO shape:
+ *   { player: IGamePlayer (gameId + name required), reason: string, expiresAt: string | null }
+ */
+function handleListBans() {
+  return [...banLedger.values()].map((record) => ({
+    player: { gameId: record.gameId, name: record.name },
+    reason: record.reason,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt
+  }));
+}
+
+/**
+ * Look up a single player. Takaro sends IPlayerReferenceDTO.toJSON() = { gameId }.
+ * Returns the same player shape as getPlayers, or null when the player is not online
+ * (Takaro's adapter maps a falsy response to null rather than a validation error).
+ */
+async function handleGetPlayer(args: any) {
+  const playerArgs = typeof args === 'string' ? JSON.parse(args) : args;
+  const playerId = resolvePlayerId(playerArgs);
+
+  if (!playerId) {
+    logger.warn(`[PLAYER] No player ID provided for getPlayer (args: ${describeArgs(playerArgs)})`);
+    return null;
+  }
+
+  const players = await handleGetPlayers(false, true);
+  const match = players.find((p: any) =>
+    p.gameId === playerId ||
+    p.steamId === playerId ||
+    p.palworldPlayerId === playerId ||
+    p.name.toLowerCase() === String(playerId).toLowerCase()
+  );
+
+  if (!match) {
+    logger.debug(`[PLAYER] getPlayer: ${playerId} is not online`);
+    return null;
+  }
+
+  return match;
 }
 
 /**
@@ -1136,17 +1434,17 @@ const activeLocationRequests = new Set<string>();
 async function handleGetPlayerLocation(args: any) {
   try {
     const locationArgs = typeof args === 'string' ? JSON.parse(args) : args;
-    const playerId = locationArgs.gameId || locationArgs.playerId || locationArgs.userId;
+    const playerId = resolvePlayerId(locationArgs);
 
     if (!playerId) {
-      logger.error('No player ID provided for getPlayerLocation');
-      return { x: 0, y: 0, z: 0 };
+      logger.error(`No player ID provided for getPlayerLocation (args: ${describeArgs(locationArgs)})`);
+      return null;
     }
 
     // Check if request already in progress for this player
     if (activeLocationRequests.has(playerId)) {
       logger.debug(`[LOCATION] Request already in progress for ${playerId}, skipping duplicate`);
-      return { x: 0, y: 0, z: 0 };
+      return null;
     }
 
     // Get player's actual name from cache (Lua needs display name, not Steam ID)
@@ -1165,7 +1463,7 @@ async function handleGetPlayerLocation(args: any) {
 
     if (!cachedPlayer) {
       logger.warn(`[LOCATION] Player ${playerId} not in cache`);
-      return { x: 0, y: 0, z: 0 };
+      return null;
     }
 
     // Mark request as active
@@ -1223,21 +1521,27 @@ async function handleGetPlayerLocation(args: any) {
       logger.debug(`[LOCATION] Removed timed out request ${requestId} from queue`);
     }
     logger.warn(`[LOCATION] Timeout waiting for location of ${playerId}`);
-    return { x: 0, y: 0, z: 0 };
+    return null;
 
   } catch (error: any) {
     // Remove from active requests on error
-    if (args && (args.gameId || args.playerId || args.userId)) {
-      const playerId = args.gameId || args.playerId || args.userId;
-      activeLocationRequests.delete(playerId);
+    const failedId = resolvePlayerId(typeof args === 'string' ? JSON.parse(args) : args);
+    if (failedId) {
+      activeLocationRequests.delete(failedId);
     }
     logger.error(`Failed to get player location: ${error.message}`);
-    return { x: 0, y: 0, z: 0 };
+    return null;
   }
 }
 
 /**
- * Get player inventory from cache
+ * Get a player's inventory on demand (F22).
+ *
+ * Enqueues an inventory request for the UE4SS mod, which enumerates the player's
+ * item containers and posts back { code, count } rows. Each row is mapped to a
+ * Takaro IItemDTO: { code, name, quantity } - `name` from the embedded catalog,
+ * falling back to the code when unknown. Returns [] cleanly (never throws / never
+ * raw rows) when the player is offline, unresolvable, has no items, or times out.
  */
 async function handleGetPlayerInventory(args: any) {
   try {
@@ -1245,31 +1549,98 @@ async function handleGetPlayerInventory(args: any) {
     const playerId = inventoryArgs.gameId || inventoryArgs.playerId || inventoryArgs.userId;
 
     if (!playerId) {
-      logger.error('No player ID provided for getPlayerInventory');
+      logger.error('[INVENTORY] No player ID provided for getPlayerInventory');
       return [];
     }
 
-    // Try to find inventory by player ID or name
-    // Since we cache by name, we need to get the player's name first
+    // Resolve the online player (same lookup as giveItem/getPlayerLocation).
     const players = await handleGetPlayers();
     const player = players.find((p: any) => p.gameId === playerId || p.steamId === playerId || p.name === playerId);
 
     if (!player) {
-      logger.warn(`Player ${playerId} not found for inventory lookup`);
+      logger.warn(`[INVENTORY] Player ${playerId} not found for inventory lookup`);
       return [];
     }
 
-    const cachedInventory = playerInventories.get(player.name);
+    const playerName = player.accountName; // Matches PlayerNamePrivate in Lua
 
-    if (!cachedInventory) {
-      return [];
+    const requestId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    inventoryRequestQueue.push({
+      name: playerName,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`[INVENTORY] Queued request ${requestId} for ${player.name}`);
+
+    // Wait for the Lua to enumerate and respond (with timeout).
+    const timeout = 5000;
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+      const responseIndex = inventoryResponseQueue.findIndex(r => r.requestId === requestId);
+
+      if (responseIndex !== -1) {
+        const response = inventoryResponseQueue[responseIndex];
+        inventoryResponseQueue.splice(responseIndex, 1);
+
+        const queueIndex = inventoryRequestQueue.findIndex(r => r.requestId === requestId);
+        if (queueIndex !== -1) {
+          inventoryRequestQueue.splice(queueIndex, 1);
+        }
+
+        const rows = Array.isArray(response.items) ? response.items : [];
+        // Map to Takaro IItemDTO shape. Takaro's IItemDTO carries the stack size in
+        // the `amount` field (see gettakaro/takaro GameServer.ts IItemDTO); sending
+        // only `quantity` made Takaro store 0. Send `amount` (and `quantity` as an
+        // alias for any consumer that reads it).
+        const dto = rows
+          .filter((it) => it && typeof it.code === 'string' && it.code !== '')
+          .map((it) => {
+            const amount = Number(it.count) || 0;
+            return {
+              code: it.code,
+              name: PALWORLD_ITEM_NAMES.get(it.code) || it.code,
+              amount,
+              quantity: amount
+            };
+          });
+
+        logger.info(`[INVENTORY] Request ${requestId} -> ${dto.length} item stack(s) for ${player.name}`);
+        return dto;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    return cachedInventory.inventory;
+    // Timeout - clean up the pending request and return empty (not an error).
+    const queueIndex = inventoryRequestQueue.findIndex(r => r.requestId === requestId);
+    if (queueIndex !== -1) {
+      inventoryRequestQueue.splice(queueIndex, 1);
+    }
+    logger.warn(`[INVENTORY] Timeout waiting for inventory response for ${player.name}`);
+    return [];
   } catch (error: any) {
-    logger.error(`Failed to get player inventory: ${error.message}`);
+    logger.error(`[INVENTORY] Failed to get player inventory: ${error.message}`);
     return [];
   }
+}
+
+/**
+ * List the Palworld item catalog for Takaro.
+ *
+ * The Palworld REST API exposes no item list, so the bridge ships a static,
+ * curated catalog (data/palworld-items.json, embedded at build time). Ids come
+ * from DT_ItemDataTable and change with game patches - regenerate after each
+ * Palworld update (see scripts/generate-embedded-items.js).
+ */
+function handleListItems() {
+  logger.debug(`[ITEMS] listItems -> ${PALWORLD_ITEMS.length} items`);
+  return PALWORLD_ITEMS.map((item) => ({
+    code: item.code,
+    name: item.name,
+    description: item.description
+  }));
 }
 
 /**
@@ -1278,18 +1649,31 @@ async function handleGetPlayerInventory(args: any) {
 async function handleGiveItem(args: any) {
   try {
     const itemArgs = typeof args === 'string' ? JSON.parse(args) : args;
-    const playerId = itemArgs.gameId || itemArgs.playerId || itemArgs.userId;
+    // Takaro sends { player: { gameId }, item, amount, quality }
+    const playerId = resolvePlayerId(itemArgs);
     const itemId = itemArgs.itemId || itemArgs.item;
-    const quantity = itemArgs.quantity || itemArgs.amount || 1;
+    const quantity = Number(itemArgs.amount ?? itemArgs.quantity ?? 1) || 1;
+    // Palworld has no item quality/tier concept; accept and ignore Takaro's field.
+    if (itemArgs.quality !== undefined && itemArgs.quality !== null && String(itemArgs.quality) !== '' && String(itemArgs.quality) !== '0') {
+      logger.debug(`[ITEMS] Ignoring quality "${itemArgs.quality}" - Palworld items have no quality tiers`);
+    }
 
     if (!playerId) {
-      logger.error('[ITEMS] No player ID provided for giveItem');
+      logger.error(`[ITEMS] No player ID provided for giveItem (args: ${describeArgs(itemArgs)})`);
       return { success: false, error: 'No player ID provided' };
     }
 
     if (!itemId) {
       logger.error('[ITEMS] No item ID provided for giveItem');
       return { success: false, error: 'No item ID provided' };
+    }
+
+    // The UE4SS mod cannot validate item ids at runtime: RequestAddItem silently
+    // no-ops on an unknown FName. The embedded catalog is the only guard, so
+    // reject unknown codes here before touching the Lua queue.
+    if (!PALWORLD_ITEM_CODES.has(itemId)) {
+      logger.warn(`[ITEMS] Unknown item code: ${itemId}`);
+      return { success: false, error: `Unknown item code: ${itemId}` };
     }
 
     // Get player's name from cache
@@ -1334,8 +1718,14 @@ async function handleGiveItem(args: any) {
           itemRequestQueue.splice(queueIndex, 1);
         }
 
+        if (!response.success) {
+          const reason = response.error || 'Item give failed in game';
+          logger.warn(`[ITEMS] Request ${requestId} failed: ${reason}`);
+          return { success: false, error: reason };
+        }
+
         return {
-          success: response.success,
+          success: true,
           playerName: response.playerName,
           itemId: response.itemId,
           quantity: response.quantity
@@ -1365,13 +1755,20 @@ async function handleGiveItem(args: any) {
  */
 async function handleTeleportPlayer(args: any) {
   const teleportArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  const sourcePlayer = teleportArgs.sourcePlayer || teleportArgs.playerId;
-  const targetPlayer = teleportArgs.targetPlayer || teleportArgs.destinationPlayer;
+  // Takaro sends { player: { ...IGamePlayer }, x, y, z, dimension }
+  const sourcePlayer = resolvePlayerId(teleportArgs);
+  const targetPlayer = resolveTargetPlayerId(teleportArgs);
   const x = teleportArgs.x;
   const y = teleportArgs.y;
   const z = teleportArgs.z;
+  // Palworld is single-world; Takaro's optional `dimension` has no meaning here.
+  if (teleportArgs.dimension !== undefined && teleportArgs.dimension !== null) {
+    logger.debug(`[TELEPORT] Ignoring dimension "${teleportArgs.dimension}" - Palworld has a single world`);
+  }
 
   if (!sourcePlayer) {
+    // A14: v1.7.6 failed this silently; always leave a trace with the shape we got.
+    logger.warn(`[TELEPORT] No source player in teleportPlayer args: ${describeArgs(teleportArgs)}`);
     return { success: false, error: 'sourcePlayer is required' };
   }
 
@@ -1379,6 +1776,7 @@ async function handleTeleportPlayer(args: any) {
   const isCoordinateTeleport = x !== undefined && y !== undefined && z !== undefined;
 
   if (!isCoordinateTeleport && !targetPlayer) {
+    logger.warn(`[TELEPORT] Neither target player nor x/y/z in args: ${describeArgs(teleportArgs)}`);
     return { success: false, error: 'Either targetPlayer or coordinates (x, y, z) are required' };
   }
 
@@ -1389,10 +1787,12 @@ async function handleTeleportPlayer(args: any) {
     // Find source player
     const source = players.find((p: any) =>
       p.name.toLowerCase() === sourcePlayer.toLowerCase() ||
-      p.gameId === sourcePlayer
+      p.gameId === sourcePlayer ||
+      p.steamId === sourcePlayer
     );
 
     if (!source) {
+      logger.warn(`[TELEPORT] Source player "${sourcePlayer}" not found online (args: ${describeArgs(teleportArgs)})`);
       return { success: false, error: `Source player "${sourcePlayer}" not found online` };
     }
 
@@ -1417,11 +1817,13 @@ async function handleTeleportPlayer(args: any) {
 
     // Handle player-to-player teleport
     const target = players.find((p: any) =>
-      p.name.toLowerCase() === targetPlayer.toLowerCase() ||
-      p.gameId === targetPlayer
+      p.name.toLowerCase() === targetPlayer!.toLowerCase() ||
+      p.gameId === targetPlayer ||
+      p.steamId === targetPlayer
     );
 
     if (!target) {
+      logger.warn(`[TELEPORT] Target player "${targetPlayer}" not found online (args: ${describeArgs(teleportArgs)})`);
       return { success: false, error: `Target player "${targetPlayer}" not found online` };
     }
 
@@ -1493,8 +1895,10 @@ async function handleExecuteCommand(args: any) {
   stop - Stop server immediately
   ban <player> - Ban a player by name
   kick <player> - Kick a player by name
-  unban <steamid> - Unban a player by Steam ID
-  teleportplayer <source> <target> - Teleport source player to target player`
+  unban <steamid|name> - Unban a player by Steam ID or by name
+  teleportplayer <source> <target> - Teleport source player to target player
+  teleportplayer <source> <x> <y> <z> - Teleport source player to coordinates
+  location <player> - Show a player's current coordinates`
       };
 
     case 'players':
@@ -1592,46 +1996,31 @@ async function handleExecuteCommand(args: any) {
         return { success: false, rawResult: `Error: ${error.message}` };
       }
 
-    case 'shutdown':
-      try {
-        let waittime = 10;
-        let shutdownMsg = 'Server shutting down';
+    case 'shutdown': {
+      let waittime = 10;
+      let shutdownMsg = 'Server shutting down';
 
-        // Check if first argument is a number
-        if (cmdArguments.length > 0) {
-          const parsedTime = parseInt(cmdArguments[0]);
-          if (!isNaN(parsedTime)) {
-            // First arg is a number, use it as waittime
-            waittime = parsedTime;
-            // Everything after is the message
-            if (cmdArguments.length > 1) {
-              shutdownMsg = cmdArguments.slice(1).join(' ');
-            }
-          } else {
-            // First arg is NOT a number, all args are the message
-            shutdownMsg = cmdArguments.join(' ');
+      // Check if first argument is a number
+      if (cmdArguments.length > 0) {
+        const parsedTime = parseInt(cmdArguments[0]);
+        if (!isNaN(parsedTime)) {
+          // First arg is a number, use it as waittime
+          waittime = parsedTime;
+          // Everything after is the message
+          if (cmdArguments.length > 1) {
+            shutdownMsg = cmdArguments.slice(1).join(' ');
           }
+        } else {
+          // First arg is NOT a number, all args are the message
+          shutdownMsg = cmdArguments.join(' ');
         }
-
-        const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
-        const data = JSON.stringify({ waittime, message: shutdownMsg });
-        const config = {
-          method: 'post',
-          maxBodyLength: Infinity,
-          url: `${PALWORLD_BASE_URL}/v1/api/shutdown`,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Basic ${authString}`
-          },
-          data: data
-        };
-        await axios(config);
-        logger.info('Server shutdown initiated');
-        return { success: true, rawResult: `Server shutting down in ${waittime} seconds: "${shutdownMsg}"` };
-      } catch (error: any) {
-        logger.error(`Failed to shutdown server: ${error.message}`);
-        return { success: false, rawResult: `Error: ${error.message}` };
       }
+
+      const result = await shutdownServer(waittime, shutdownMsg);
+      return result.success
+        ? { success: true, rawResult: result.message }
+        : { success: false, rawResult: `Error: ${result.error}` };
+    }
 
     case 'stop':
       try {
@@ -1683,7 +2072,7 @@ async function handleExecuteCommand(args: any) {
 
     case 'unban':
       if (cmdArguments.length === 0) {
-        return { success: false, rawResult: 'Usage: unban <steam_id>' };
+        return { success: false, rawResult: 'Usage: unban <steam_id|player_name>' };
       }
       try {
         const userId = cmdArguments[0];
@@ -1742,7 +2131,7 @@ async function handleExecuteCommand(args: any) {
       try {
         const playerIdentifier = cmdArguments.join(' ');
         const location = await handleGetPlayerLocation({ gameId: playerIdentifier, playerId: playerIdentifier, userId: playerIdentifier });
-        if (location.x === 0 && location.y === 0 && location.z === 0) {
+        if (!location) {
           return { success: false, rawResult: `Unable to get location for "${playerIdentifier}"` };
         }
         return {
@@ -1767,14 +2156,23 @@ async function handleExecuteCommand(args: any) {
  */
 async function handleKickPlayer(args: any) {
   const kickArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  const userId = kickArgs.gameId || kickArgs.userId;
+  // Takaro sends { player: { ...IGamePlayer }, reason }
+  const userId = resolvePlayerId(kickArgs);
+  const reason = typeof kickArgs?.reason === 'string' && kickArgs.reason.trim()
+    ? kickArgs.reason.trim()
+    : 'You have been kicked from the server';
+
+  if (!userId) {
+    logger.warn(`[KICK] No player ID provided for kickPlayer (args: ${describeArgs(kickArgs)})`);
+    return { success: false, error: 'No player ID provided' };
+  }
 
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
 
     const data = JSON.stringify({
       userid: userId,
-      message: 'You have been kicked from the server'
+      message: reason
     });
 
     const config = {
@@ -1802,14 +2200,29 @@ async function handleKickPlayer(args: any) {
  */
 async function handleBanPlayer(args: any) {
   const banArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  const userId = banArgs.gameId || banArgs.userId;
+  // Takaro sends BanDTO.toJSON() = { player: { ...IGamePlayer }, reason, expiresAt }
+  const userId = resolvePlayerId(banArgs);
+  const reason = typeof banArgs?.reason === 'string' && banArgs.reason.trim()
+    ? banArgs.reason.trim()
+    : 'You are banned.';
+
+  if (!userId) {
+    logger.warn(`[BAN] No player ID provided for banPlayer (args: ${describeArgs(banArgs)})`);
+    return { success: false, error: 'No player ID provided' };
+  }
+
+  // Palworld's REST /v1/api/ban takes only { userid, message } -- there is no expiry
+  // parameter, so a temporary ban from Takaro becomes a permanent in-game ban.
+  if (banArgs?.expiresAt) {
+    logger.warn(`[BAN] Palworld's REST API has no ban expiry; ${userId} is banned permanently in-game (expiresAt ${banArgs.expiresAt} is only tracked by Takaro)`);
+  }
 
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
 
     const data = JSON.stringify({
       userid: userId,
-      message: 'You are banned.'
+      message: reason
     });
 
     const config = {
@@ -1824,6 +2237,21 @@ async function handleBanPlayer(args: any) {
     };
 
     const response = await axios(config);
+
+    const cached = playerCache.get(userId);
+    const name = (typeof banArgs?.player?.name === 'string' && banArgs.player.name)
+      || (typeof banArgs?.name === 'string' && banArgs.name)
+      || cached?.name
+      || userId;
+    banLedger.set(userId, {
+      gameId: userId,
+      name,
+      reason,
+      createdAt: new Date().toISOString(),
+      expiresAt: typeof banArgs?.expiresAt === 'string' ? banArgs.expiresAt : null
+    });
+    saveBanLedger();
+
     logger.info(`Player ${userId} banned successfully`);
     return { success: true };
   } catch (error: any) {
@@ -1837,7 +2265,18 @@ async function handleBanPlayer(args: any) {
  */
 async function handleUnbanPlayer(args: any) {
   const unbanArgs = typeof args === 'string' ? JSON.parse(args) : args;
-  const userId = unbanArgs.gameId || unbanArgs.userId;
+  // F20: unban's payload flattens the game id to the TOP LEVEL (gameId/steamId) with a
+  // `player` sub-object that only holds Takaro's own ids, so the generic resolver picked
+  // the Takaro playerId and the real steam id was never unbanned. Read the true game id.
+  const requested = resolveUnbanGameId(unbanArgs);
+  // Allow unbanning by player name as well: the ledger remembers the name we banned.
+  const record = requested ? findBanRecord(requested) : undefined;
+  const userId = record ? record.gameId : requested;
+
+  if (!userId) {
+    logger.warn(`[UNBAN] No player ID provided for unbanPlayer (args: ${describeArgs(unbanArgs)})`);
+    return { success: false, error: 'No player ID provided' };
+  }
 
   try {
     const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
@@ -1858,12 +2297,78 @@ async function handleUnbanPlayer(args: any) {
     };
 
     const response = await axios(config);
+
+    if (banLedger.delete(userId)) {
+      saveBanLedger();
+    }
+
     logger.info(`Player ${userId} unbanned successfully`);
     return { success: true };
   } catch (error: any) {
     logger.error(`Failed to unban player ${userId}: ${error.message}`);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Graceful shutdown via Palworld's REST API. Shared by the console `shutdown` command and
+ * Takaro's `shutdown` action (A15: v1.7.6 answered "Unknown action: shutdown").
+ */
+async function shutdownServer(waittime: number, message: string) {
+  try {
+    const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+    const config = {
+      method: 'post',
+      maxBodyLength: Infinity,
+      url: `${PALWORLD_BASE_URL}/v1/api/shutdown`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${authString}`
+      },
+      data: JSON.stringify({ waittime, message })
+    };
+    await axios(config);
+    logger.info(`Server shutdown initiated (${waittime}s): "${message}"`);
+    return { success: true, message: `Server shutting down in ${waittime} seconds: "${message}"` };
+  } catch (error: any) {
+    logger.error(`Failed to shutdown server: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Takaro `shutdown` action: bring the server process DOWN.
+ *
+ * F15 (hardtest-7R-A15.txt): the graceful REST shutdown (/v1/api/shutdown with a
+ * waittime) disconnects players and UNLOADS the world but does NOT terminate the
+ * PalServer process - REST 8212 kept returning 200 and the PID stayed alive for
+ * 3.5+ min, so Takaro never saw the server go down. Palworld's REST exposes an
+ * immediate variant, /v1/api/stop ("Force stop the server immediately"), which is
+ * the one meant to end the process; route the Takaro action there instead. We
+ * announce first so players get a reason, then force-stop.
+ *
+ * If PalServer v1.0.5's /v1/api/stop ALSO only unloads without exiting the .exe,
+ * that is a server limitation (its REST offers no in-process way to make the
+ * process exit) and an external supervisor / power-cycle would be required - to
+ * be confirmed by the live retest.
+ */
+async function shutdownForTakaro(message: string) {
+  const authString = Buffer.from(`${PALWORLD_USERNAME}:${PALWORLD_PASSWORD}`).toString('base64');
+  // Best-effort in-game notice; a failed announce must never block the stop.
+  try {
+    await axios({
+      method: 'post',
+      url: `${PALWORLD_BASE_URL}/v1/api/announce`,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${authString}` },
+      data: JSON.stringify({ message }),
+      timeout: 5000,
+    });
+  } catch (error: any) {
+    logger.debug(`Shutdown announce failed (non-fatal): ${error.message}`);
+  }
+  // /v1/api/stop is the immediate/force variant meant to end the process, unlike
+  // /v1/api/shutdown which A15 proved only unloads the world (F15).
+  return handleStopServer();
 }
 
 /**
@@ -1908,7 +2413,9 @@ function sendToTakaro(message: any) {
   }
 
   try {
-    takaroWs.send(JSON.stringify(message));
+    const raw = JSON.stringify(message);
+    logWsFrame('SEND', raw);
+    takaroWs.send(raw);
 
     if (message.type === 'response') {
       metrics.responsesSent++;
@@ -2085,5 +2592,10 @@ process.on('SIGTERM', () => {
   }
   process.exit(0);
 });
+
+loadBanLedger();
+if (banLedger.size > 0) {
+  logger.info(`[BAN] Loaded ${banLedger.size} ban(s) from ${BANS_PATH}`);
+}
 
 logger.info(`Palworld-Takaro Bridge v${VERSION} starting...`);
