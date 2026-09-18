@@ -1,0 +1,83 @@
+# Builds on every push to master. Creates a GitHub release (tag = "v" + package.json
+# version) only when that tag does not exist yet. To ship a release: bump "version" in
+# package.json in your PR and merge it.
+name: Build & Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from package.json
+        id: ver
+        run: echo "tag=v$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether tag already exists
+        id: check
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Build PalworldBridge.exe
+        run: npm run build:exe
+
+      - name: Package release assets
+        run: |
+          mkdir -p release
+          cp build/PalworldBridge.exe TakaroConfig.txt release/
+          zip -qr release/TakaroChat.zip TakaroChat
+          git archive --format=tar.gz --prefix="Palworld-Bridge-${{ steps.ver.outputs.tag }}/" \
+            -o "release/Palworld-Bridge-${{ steps.ver.outputs.tag }}-source.tar.gz" HEAD
+          ls -la release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: needs.build.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release
+      - name: Create release ${{ needs.build.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ needs.build.outputs.tag }}" \
+            --title "${{ needs.build.outputs.tag }}" \
+            --generate-notes \
+            release/*
