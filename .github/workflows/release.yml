@@ -1,6 +1,6 @@
 # Auto-release: every push to master builds. If the current version is already
-# released, the version is bumped automatically (patch by default; put #minor or
-# #major in the PR title / merge commit for a bigger bump), the bump is committed
+# released, the version is bumped automatically (patch by default; put the word
+# #minor or #major in the PR title / merge commit for a bigger bump), the bump is committed
 # back to master, and a GitHub release with generated notes is published.
 # Pushes that only touch docs, markdown or CI files build but do not release.
 # A version you bump by hand in a PR is used as-is.
@@ -62,7 +62,9 @@ jobs:
             else
               level=patch
               case "${BUMP_INPUT:-}" in major|minor|patch) level=$BUMP_INPUT;; esac
-              case "${COMMIT_MSG:-}" in *'#major'*) level=major;; *'#minor'*) level=minor;; esac
+              # "#major" / "#minor" must be a standalone token in the merge commit / PR title
+              kw() { grep -Eq "(^|[[:space:](\[])#$1([[:space:])\].,:;!]|$)" <<< "${COMMIT_MSG:-}"; }
+              if kw major; then level=major; elif kw minor; then level=minor; fi
               IFS=. read -r a b c <<< "$cur"
               case $level in
                 major) a=$((a+1)); b=0; c=0;;
