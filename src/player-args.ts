@@ -103,3 +103,31 @@ export function describeArgs(args: any): string {
     return String(args);
   }
 }
+
+/** The Takaro IGamePlayer identity fields derived from one Palworld REST `userId`. */
+export interface PalworldIdentity {
+  steamId?: string;
+  xboxLiveId?: string;
+  platformId?: string;
+}
+
+/**
+ * Map a Palworld `userId` to the identity fields Takaro matches players on.
+ *
+ * Takaro links a player across servers and games only through `steamId`,
+ * `epicOnlineServicesId`, `xboxLiveId` and `platformId`, each compared verbatim; it never
+ * parses `platformId`. So:
+ *   steam_<SteamID64> -> steamId = <SteamID64>, platformId = steam:<SteamID64>
+ *   gdk_<xuid>        -> xboxLiveId = <xuid>,   platformId = xbox:<xuid>   (Xbox / Game Pass)
+ *   anything else     -> platformId = palworld:<userId> (PS5, Mac, ...), no steamId
+ * A non-Steam id must never land in `steamId`.
+ */
+export function palworldIdentity(userId: string): PalworldIdentity {
+  const id = String(userId ?? '').trim();
+  const steam = /^steam_(\d{17})$/.exec(id);
+  if (steam) return { steamId: steam[1], platformId: `steam:${steam[1]}` };
+  const xbox = /^gdk_(\d+)$/.exec(id);
+  if (xbox) return { xboxLiveId: xbox[1], platformId: `xbox:${xbox[1]}` };
+  if (/^[A-Za-z0-9_-]+$/.test(id)) return { platformId: `palworld:${id}` };
+  return {};
+}

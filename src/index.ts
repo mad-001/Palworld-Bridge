@@ -12,7 +12,7 @@ import { items as PALWORLD_ITEMS, itemCodes as PALWORLD_ITEM_CODES } from './emb
 // Map internal item code (FName, e.g. "Wood") -> English display name from the
 // embedded catalog, for building Takaro IItemDTO rows (code + name required).
 const PALWORLD_ITEM_NAMES = new Map<string, string>(PALWORLD_ITEMS.map((i) => [i.code, i.name]));
-import { resolvePlayerId, resolveTargetPlayerId, resolveUnbanGameId, describeArgs, bareSteamId } from './player-args';
+import { resolvePlayerId, resolveTargetPlayerId, resolveUnbanGameId, describeArgs, palworldIdentity } from './player-args';
 
 const execPromise = promisify(exec);
 
@@ -363,7 +363,7 @@ const playerInventories = new Map<string, PlayerInventory>();
 // Track online players to detect connect/disconnect
 let lastKnownPlayers = new Set<string>();
 let hasInitializedPlayerList = false; // Track if we've done first poll
-const playerCache = new Map<string, { gameId: string; name: string; accountName: string; steamId: string; palworldPlayerId: string }>();
+const playerCache = new Map<string, { gameId: string; name: string; accountName: string; palworldPlayerId: string; steamId?: string; xboxLiveId?: string; platformId?: string }>();
 
 // Teleport queue for pending teleports
 interface TeleportRequest {
@@ -552,6 +552,16 @@ app.post('/chat', async (req, res) => {
       case 'player_disconnect':
         logger.info(`[EVENT] Player disconnected: ${playerName}`);
         if (isConnectedToTakaro) {
+          // The mod's ReceiveEndPlay hook also fires when the player's pawn is replaced
+          // (join -> spawn, respawn), not only on logout. Trust REST: if the player is
+          // still listed, it was not a disconnect. A real one is still caught by the
+          // REST poll once the player drops off the list.
+          const online = await handleGetPlayers();
+          if (online.some((p: any) => p.name.toLowerCase() === playerName.toLowerCase()
+            || String(p.accountName || '').toLowerCase() === playerName.toLowerCase())) {
+            logger.info(`[EVENT] Ignoring disconnect for ${playerName}: still online per REST (pawn replaced)`);
+            break;
+          }
           // Use cached gameId for disconnect (player is offline now)
           const cachedPlayer = Array.from(playerCache.values()).find(p =>
             p.name.toLowerCase() === playerName.toLowerCase()
@@ -740,7 +750,7 @@ async function sendChatEvent(chatData: any) {
           player: {
             name: player.name,
             gameId: player.gameId,
-            steamId: player.steamId
+            ...palworldIdentity(player.gameId)
           },
           channel: channel
         }
@@ -766,7 +776,7 @@ async function sendPlayerEvent(eventType: string, playerName: string, timestamp?
     if (gameId) {
       // Use provided gameId - ensure it's a string
       const cachedPlayer = playerCache.get(gameId);
-      player = cachedPlayer || { name: playerName, gameId: String(gameId), steamId: String(gameId) };
+      player = cachedPlayer || { name: playerName, gameId: String(gameId) };
     } else {
       // Try to find in cache by name
       for (const cachedPlayer of playerCache.values()) {
@@ -792,7 +802,7 @@ async function sendPlayerEvent(eventType: string, playerName: string, timestamp?
           player: {
             name: String(player.name),
             gameId: String(player.gameId),
-            steamId: String(player.steamId || player.gameId)
+            ...palworldIdentity(String(player.gameId))
           }
         }
       }
@@ -1241,10 +1251,9 @@ async function handleGetPlayers(detectChanges: boolean = false, throwOnError: bo
       gameId: String(player.userId),
       name: String(player.name), // Character name (for Takaro)
       accountName: String(player.accountName || player.name), // Steam account name (for Lua - what PlayerNamePrivate returns)
-      platformId: `palworld:${player.userId}`,
-      // gameId stays the raw Palworld userId (stable identity); Takaro's Steam enrichment
-      // needs the bare 17-digit Steam64 id, not Palworld's "steam_" prefixed form.
-      steamId: bareSteamId(String(player.userId)),
+      // gameId stays the raw Palworld userId (stable identity); the Takaro identity fields
+      // (steamId / xboxLiveId / platformId) are derived from it, see palworldIdentity().
+      ...palworldIdentity(String(player.userId)),
       palworldPlayerId: String(player.playerId || ''), // GUID from Palworld API - matches PlayerState.PlayerId in UE4SS
       ip: player.ip || undefined,
       ping: player.ping !== undefined ? player.ping : undefined,
@@ -1255,7 +1264,7 @@ async function handleGetPlayers(detectChanges: boolean = false, throwOnError: bo
 
     // Always cache player data (including accountName for Lua communication and palworldPlayerId for matching)
     for (const player of mappedPlayers) {
-      playerCache.set(player.gameId, { gameId: player.gameId, name: player.name, accountName: player.accountName, steamId: player.steamId, palworldPlayerId: player.palworldPlayerId });
+      playerCache.set(player.gameId, { gameId: player.gameId, name: player.name, accountName: player.accountName, palworldPlayerId: player.palworldPlayerId, steamId: player.steamId, xboxLiveId: player.xboxLiveId, platformId: player.platformId });
     }
 
     // Only detect connect/disconnect during polling interval (not on Takaro's frequent getPlayers requests)
@@ -1310,7 +1319,7 @@ async function handleGetPlayers(detectChanges: boolean = false, throwOnError: bo
  */
 function handleListBans() {
   return [...banLedger.values()].map((record) => ({
-    player: { gameId: record.gameId, name: record.name },
+    player: { gameId: record.gameId, name: record.name, ...palworldIdentity(record.gameId) },
     reason: record.reason,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt
