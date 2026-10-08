@@ -1,0 +1,42 @@
+# Auto-merges pull requests opened by El-Limon (matched by GitHub user id, so a
+# renamed or look-alike account can't use it). No PR code is checked out or run.
+# GITHUB_TOKEN merges don't fire push workflows, so any workflow_dispatch-able
+# release.yml is started by hand after the merge.
+name: Auto-merge El-Limon PRs
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TRUSTED_ID: "136495673"
+      TRUSTED_NODE_ID: "U_kgDOCCLCOQ"
+    steps:
+      - name: Merge El-Limon PRs
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            [ "${{ github.event.pull_request.user.id }}" = "$TRUSTED_ID" ] || exit 0
+            [ "${{ github.event.pull_request.draft }}" = "false" ] || exit 0
+            prs="${{ github.event.pull_request.number }}"
+          else
+            prs=$(gh pr list --state open --json number,author,isDraft \
+              -q ".[] | select(.author.id == \"$TRUSTED_NODE_ID\" and (.isDraft | not)) | .number")
+          fi
+          merged=0
+          for n in $prs; do
+            if gh pr merge "$n" --merge; then merged=1; else echo "::warning::PR #$n could not be merged"; fi
+          done
+          if [ "$merged" = 1 ] && gh workflow view release.yml >/dev/null 2>&1; then
+            gh workflow run release.yml --ref "${{ github.event.repository.default_branch }}"
+          fi
